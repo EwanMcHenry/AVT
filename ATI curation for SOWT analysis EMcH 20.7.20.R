@@ -5,22 +5,159 @@
 library(sf) # for gis
 library("rnrfa") # to convert os gb grif ref
 library(rgdal) # to convert lat long to os gb
-
+library(tidyverse)
 library("rnaturalearth") # map of countries of the entire world
 library("rnaturalearthdata")
 library("rgeos")
 library(ggplot2)
 library(stringr) # for str_detect()
+library(U.utilities) # devtools::install_github("Ewan McHenry/U.utilities")
+
+# library(geosphere) # for coordinate conversion
+# library(proj4)# for coordinate conversion
+library(igr) # for coordinate conversion
 
 
 # load data ----
-ati = read.csv("S:\\Users\\Ewan McHenry\\Documents\\Work\\SoWT\\ATI\\ewan.ATI.16.7.2020.csv")
+ati <- read.csv(paste0(gis.wd, "\\Data\\ATI\\downloaded data\\ATI - 2024_08_05.csv")) %>%
+  mutate(Longitude_orig = Longitude, 
+         Latitude_orig = Latitude) %>% 
+  st_as_sf(coords = c("Longitude", "Latitude"), crs = 4326) %>% 
+  rename(Longitude = Longitude_orig, Latitude = Latitude_orig)
+world <- ne_countries(scale = "medium", returnclass = "sf")
+uk_ireland <- ne_countries(scale = "medium", country = c("United Kingdom", "Ireland", "Isle of Man"), returnclass = "sf")
+uk_ireland_france <- ne_countries(scale = "medium", country = c("United Kingdom", "Ireland", "Isle of Man", "France"), returnclass = "sf")
+bbox_uk_ireland <- uk_ireland %>% st_bbox() %>% st_as_sfc() %>% st_buffer(0) %>% st_bbox()%>% st_as_sfc()
+mapping.area <- st_intersection(uk_ireland_france, bbox_uk_ireland)
 
-# projection shortcuts ----
-ukgrid <- "+init=epsg:27700"
-latlong <- "+init=epsg:4326"
 # data curation ----
-ati = ati[!is.na(ati$TreeNumber) ,]
+# Replace all "" with NA in character columns only
+ati <- ati %>% 
+  mutate(across(where(is.character), ~na_if(.x, "")))
+ati$CountryName[ati$CountryName == "Northern Ireland" ] <- "N. Ireland" # sync northern ireland naming
+ati <- subset(ati, select = -X) #remove X column
+ati$CreatedDate <- as.Date(ati$CreatedDate, format = "%d/%m/%Y") # Convert CreatedDate to Date format
+ati$SurveyDate <- as.Date(ati$SurveyDate, format = "%d/%m/%Y") # Convert SurveyDate to Date format
+ati$VerifiedDate <- as.Date(ati$VerifiedDate, format = "%d/%m/%Y") # Convert VerifiedDate to Date format
+
+## manuel fixes ----
+ati$GridReference[ati$GridReference == "S025879030"] = "SO25879030"
+ati$GridReference[ati$GridReference == "J340694" & ati$CountyName == "Cheshire"] = "SJ406940" # added letter, easy using town name        
+ati$CountryName[ati$GridReference == "J3413969393" & ati$SiteName == "Belvoir Park"] = "N. Ireland" # added letter, easy using town name
+
+# some aproximated based on site name the last half is right and first half of first half seems good
+ati$GridReference[ati$GridReference == "NO238124462" & ati$SiteName == "Megginch Castle"] = "NO2381024462" # looks sensible enough https://gridreferencefinder.com?gr=NO2381024462|NO2381024462|1&t=NO2381024462&v=r
+ati$GridReference[ati$GridReference == "NO239522448" & ati$SiteName == "Megginch Castle"] = "NO2395024448" # doesnt look right at all originally https://gridreferencefinder.com?gr=NO2390522448|NO2390522448|1&t=NO2390522448&v=r look som eliberties, assumed a mis-placed 4
+ati$GridReference[ati$GridReference == "NO244624627" & ati$SiteName == "Megginch Castle"] = "NO2446024627" # looks okay https://gridreferencefinder.com?gr=NO2446024627|NO2446024627|1&t=NO2446024627&v=r
+ati$GridReference[ati$GridReference == "NX850589132" & ati$LocationAccessComments  == "Within formal gardens of Drumlanrig Castle"] = "NX8505899132" # aint no avenue, but looks okay  https://gridreferencefinder.com?gr=NX8505899132|NX8505899132|1&t=NX8505899132&v=r
+# remove these with locations that cant be worked out
+ati <- ati[!ati$GridReference %in% c("NY952304530", "NY955504542","NY985904685" , "NY955804554", # all clearly close together, but te closest I can figure out is up on a grouse moor somewhere https://gridreferencefinder.com?gr=NY9555504542|NY9555504542|1&t=NY9555504542&v=r
+                                     "SE515215860", "SE517115849" # cant get anywhere near to "Wortley Hall" with these
+),]
+
+
+## pruning based on location data ----
+
+ati <- st_intersection( ati, bbox_uk_ireland) # keep only trees within UK and Ireland
+
+# where there is no GridReference? - they are all outside UK ----
+ggplot()+
+  geom_sf(data = mapping.area) +
+  geom_sf(data = ati[is.na(ati$GridReference) ,],
+                                                     color = "red") + labs(title = "All trees")
+
+# location curation ----
+
+## Where grid reference only has 1 letter in its first two characters - theyre all irish grid refs ------ 
+GridReferenceLength = nchar(as.character(ati$GridReference))
+one.letter <- grepl("^[A-Za-z]{1}", ati$GridReference) & !grepl("^[A-Za-z]{2}", ati$GridReference) # grid ref has 1 letter
+
+# # some are in UK, some are in polanmd or somehwere... wrong long/lat
+ggplot() + geom_sf(data = mapping.area) +
+  geom_sf(data = ati[one.letter,],
+          aes(color = CountryName)) + labs(title = "All trees")
+
+# ## are there any NI records not with 1 letter? - yes, they are done on GB grid... presumably recorded by penguins 
+# ati$GridReference[!one.letter & ati$CountryName == "N. Ireland"]
+
+## Some non-Irish have only 1 letter? 
+ati$CountryName[one.letter  ] %>% table() # should be no non-Irish trees
+# ati[one.letter & ati$CountryName == "",]
+# ati$GridReference[one.letter & ati$CountryName == "England"  ] 
+
+
+## Separate out the two different grid ref systems, reproject and re-join ----
+ati_irl_gridref <- st_igr_as_sf(ati[one.letter,], "GridReference") %>% 
+  as.data.frame() %>%
+  st_as_sf(coords = c("x", "y"), crs = 29902) %>% 
+  st_transform(4326)
+
+ati_gb_gridref <- ati[!one.letter,]
+
+ati <- rbind(ati_gb_gridref, ati_irl_gridref)
+
+
+## odd number of numbers in grid ref?
+n.numbers_in_gridref <- str_count(ati$GridReference, "[0-9]") # number of numbers in grid ref
+ati[n.numbers_in_gridref %% 2 == 1,  # odd number of numbers in grid ref
+    c("GridReference", "LocalName", "CountyName", "CountryName", "SiteName", "SurroundingsNames", "LocationAccessComments", "LivingStatusName", "TreeFormName") ] %>% 
+  arrange(GridReference) 
+# # some aproximated based on site name the last half is right and first half of first half seems good
+# ati$GridReference[ati$GridReference == "NO238124462" & SiteName == "Megginch Castle"] = "NO2381024462" # looks sensible enough https://gridreferencefinder.com?gr=NO2381024462|NO2381024462|1&t=NO2381024462&v=r
+# ati$GridReference[ati$GridReference == "NO239522448" & SiteName == "Megginch Castle"] = "NO2395024448" # doesnt look right at all originally https://gridreferencefinder.com?gr=NO2390522448|NO2390522448|1&t=NO2390522448&v=r look som eliberties, assumed a mis-placed 4
+# ati$GridReference[ati$GridReference == "NO244624627" & SiteName == "Megginch Castle"] = "NO2446024627" # looks okay https://gridreferencefinder.com?gr=NO2446024627|NO2446024627|1&t=NO2446024627&v=r
+# ati$GridReference[ati$GridReference == "NX850589132" & LocationAccessComments  == "Within formal gardens of Drumlanrig Castle"] = "NX8505899132" # aint no avenue, but looks okay  https://gridreferencefinder.com?gr=NX8505899132|NX8505899132|1&t=NX8505899132&v=r
+# 
+# # remove these with locations that cant be worked out
+# ati <- ati[!ati$GridReference %in% c("NY952304530", "NY955504542","NY985904685" , "NY955804554", # all clearly close together, but te closest I can figure out is up on a grouse moor somewhere https://gridreferencefinder.com?gr=NY9555504542|NY9555504542|1&t=NY9555504542&v=r
+#                                      "SE515215860", "SE517115849" # cant get anywhere near to "Wortley Hall" with these
+#                                      ),]
+# 
+
+
+
+
+
+# # those wronguns arent in poland anymore, thats good!
+# ggplot() + geom_sf(data = mapping.area) + 
+#   geom_sf(data = ati_irl_gridref,
+#           aes(color = CountryName)) + labs(title = "All trees")
+# 
+# ggplot() + geom_sf(data = mapping.area) + 
+#   geom_sf(data = ati[one.letter,],
+#           aes(color = CountryName)) + labs(title = "All trees")
+
+# # the differences between corrected and original long/lat are very small, except where theyre meant to be big
+# ati_irl_gridref <- ati_irl_gridref %>% mutate(Longitude2 = st_coordinates(.)[,1], Latitude2 = st_coordinates(.)[,2])
+# ati_irl_gridref$diiff.long <- ati_irl_gridref$Longitude - ati_irl_gridref$Longitude2
+# ati_irl_gridref$diiff.lat <- ati_irl_gridref$Latitude - ati_irl_gridref$Latitude2
+# cbind(ati_irl_gridref$GridReference, ati_irl_gridref$Longitude, ati_irl_gridref$Longitude2, ati_irl_gridref$diiff.long, ati_irl_gridref$Latitude, ati_irl_gridref$Latitude2, ati_irl_gridref$diiff.lat) [order(-ati_irl_gridref$diiff.long),]
+
+
+
+# ati[one.letter, c("TreeNumber", "Longitude", "Latitude", "GridReference", "CountryName")] %>%
+
+# identify which GridReference are using irish grid ref system
+
+
+
+
+
+## find GridReference chr string length
+### nchar(as.character(ati$GridReference)) %>% is.na() %>% table()
+### nchar(as.character(ati$GridReference))%>% table()
+
+# plot longitudes and latitudes of trees where GridReference does not starts with exactly two letters followed by numbers
+letters.formated <- grepl("^[A-Za-z]{2}", ati$GridReference)
+
+# plot(ati$Longitude[!letters.formated], ati$Latitude[!letters.formated], xlab = "Longitude", ylab = "Latitude", main = "Trees with GridReference not starting with exactly two letters followed by numbers")
+
+# Keep only rows where GridReference starts with exactly two letters followed by numbers
+ati <- ati[grepl("^[A-Za-z]{2}", ati$GridReference), ]
+
+
+
+
 
 # tree without location info
 ati = ati[!ati$TreeNumber ==  96976,] 
