@@ -86,7 +86,7 @@ ati <- ati[!ati$CountyName %in% c("Guernsey" #
 ati$geometry[ati$GridReference == "SJ406940"] <- st_sfc(st_point(c(-2.8956647, 53.439411)), crs = 4326) # was way over in eastern europe
 
 
-# # Misc manuel edits on previous version - to be reviewed
+# # Misc manuel edits on previous version - to be reviewed - did this back in 2020 and forget why
 # ati = ati [!ati$TreeNumber %in% c(83027),]# duplicate foudn when fixing locations in water
 # 
 # # shift a few locations that are in sea etc, that dont join to countries shapefile.
@@ -132,12 +132,10 @@ ati$geometry[ati$GridReference == "SJ406940"] <- st_sfc(st_point(c(-2.8956647, 5
 ## syncronising irish grid refs ------ 
 one.letter <- grepl("^[A-Za-z]{1}", ati$GridReference) & !grepl("^[A-Za-z]{2}", ati$GridReference) # grid ref has 1 letter - theyre irish grid
 
-# ## check no non-Irish have only 1 letter? 
+# ## check no non-Irish have only 1 letter?
 # ati$CountryName[one.letter  ] %>% table() # should be no non-Irish trees
 # ati[one.letter & ati$CountryName == "",]
-# ati$GridReference[one.letter & ati$CountryName == "England"  ] 
-
-
+# ati$GridReference[one.letter & ati$CountryName == "England"  ]
 # # some are in UK, some are in polanmd or somehwere... wrong long/lat
 # ggplot() + geom_sf(data = mapping.area) +
 #   geom_sf(data = ati[one.letter,],
@@ -148,9 +146,9 @@ one.letter <- grepl("^[A-Za-z]{1}", ati$GridReference) & !grepl("^[A-Za-z]{2}", 
 
 ## Separate out the different grid ref systems, reproject and re-join 
 ### irish grid refs ----
-ati_irl_gridref <- st_igr_as_sf(ati[one.letter,], "GridReference") %>% 
-  as.data.frame() %>%
-  st_as_sf(coords = c("x", "y"), crs = 29902) %>% 
+ati_irl_gridref <- st_igr_as_sf(ati[one.letter,], "GridReference") %>% # find x an y form irish grid ref
+  as.data.frame() %>% # hack - turn back to df
+  st_as_sf(coords = c("x", "y"), crs = 29902) %>%  # turn back to sf in irish grid projection
   st_transform(4326)
 
 # # check - are they all in island of irealnd
@@ -217,7 +215,7 @@ ati <- rbind(ati_gb_gridref, ati_irl_gridref)
 ## pruning based on location data ----
 
 
-
+# make sure all curation done bfore this!!!!!
 ati <- st_intersection( ati, bbox_uk_ireland) # keep only trees within UK and Ireland
 
 # where there is no GridReference? - they are all outside UK ----
@@ -254,8 +252,8 @@ ati <- st_intersection( ati, bbox_uk_ireland) # keep only trees within UK and Ir
 
 
 # some dates are missing which are recorded and verified by the same person, and there is a verification date. For these I have made the origianl date teh verified date
-# # n = 39, most of them in 1st half of 2007
-ati$date1[!is.na(ati$date.verified) & is.na(ati$date1) & ati$OriginalRecorderID == ati$VerifierUserID]= ati$date.verified[!is.na(ati$date.verified) & is.na(ati$date1) & ati$OriginalRecorderID == ati$VerifierUserID]
+# # # n = 39, most of them in 1st half of 2007 revisit this code
+# ati$date1[!is.na(ati$date.verified) & is.na(ati$date1) & ati$OriginalRecorderID == ati$VerifierUserID]= ati$date.verified[!is.na(ati$date.verified) & is.na(ati$date1) & ati$OriginalRecorderID == ati$VerifierUserID]
 # some verification dates are before OG record
 ati[which(ati$CreatedDate > ati$VerifiedDate ),c("Id", "CreatedDate", "VerifiedDate", "SurveyDate")]
 dim (ati[which(ati$CreatedDate > ati$VerifiedDate ),c("CreatedDate", "VerifiedDate", "SurveyDate")])
