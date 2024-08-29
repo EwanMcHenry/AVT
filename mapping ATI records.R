@@ -27,10 +27,8 @@ library(htmlwidgets)
 library(U.utilities)
 
 # load data ----
-ati = read.csv(paste0(gis.wd, "Data\\ATI\\
+load(paste0(gis.wd, "\\Data\\ATI\\ati2024-08-28curated_fromATI - 2024_08_05.csv.RData"))
 
-# working here 
-                      ATI - 2024_08_05.csv")
 presence.pred = raster("S:\\Users\\Ewan McHenry\\OneDrive - the Woodland Trust\\SoWT\\ATI\\ATI heatmap layer.tif")
 hab.suit = raster("S:\\Users\\Ewan McHenry\\OneDrive - the Woodland Trust\\SoWT\\ATI\\HabitatSuitabilityMap.tif")
 
