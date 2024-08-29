@@ -17,108 +17,11 @@ library(rmapshaper) # for ms_simplify()
 library(svglite)
 library(ggpubr) 
 library(viridis)
-
-#font_import()
-#loadfonts(device = "win")
-
-# functions ----
-# taken from https://timogrossenbacher.ch/2016/12/beautiful-thematic-maps-with-ggplot2-only/
-
-theme_map <- function(...) {
-  theme_minimal() +
-    theme(
-      text = element_text(family = "sans", color = "#22211d"),
-      axis.line = element_blank(),
-      axis.text.x = element_blank(),
-      axis.text.y = element_blank(),
-      axis.ticks = element_blank(),
-      axis.title.x = element_blank(),
-      axis.title.y = element_blank(),
-      plot.title = element_text(size = 12),
-      plot.subtitle = element_text(size = 8),
-      legend.title = element_text(size = 8),
-      # panel.grid.minor = element_line(color = "#ebebe5", size = 0.2),
-      panel.grid.major = element_line(color = "transparent", size = 0.2),
-      panel.grid.minor = element_blank(),
-      plot.background = element_rect(fill = "transparent", color = NA), 
-      panel.background = element_rect(fill = "transparent", color = NA), 
-      legend.background = element_rect(fill = "transparent", color = NA),
-      panel.border = element_blank(),
-      ...
-    )
-}
-colour.brks <- function (lims){pretty(seq(from = lims[1] , to = lims[2] , length = 10))}
-colour.lable <- function(x,lims, breaks = colour.brks(lims), dividor = 1 ){
-  if( max(lims)< max(x)){ paste(breaks/dividor , c(rep("", times = length(colour.brks(lims))-1),"+"))} 
-  else{paste(breaks)}}
-
-map.ploter.ident <- function( fill.scale.title , main.title , sub.title ,
-                        background = countries,
-                        fillground = COUNTRY.ATI.shp,
-                        fillground2 = COUNTRY.ATI.shp, 
-                        transformation = "identity",
-                        col.limits = c(0,max(variable)) , 
-                        to.plot = variable,
-                        clr.breaks = colour.brks(lims = colour.limits),
-                        clr.labels = colour.lable(x = variable ,
-                                                  lims = colour.limits , 
-                                                  breaks = colour.brks(colour.limits ),
-                                                  dividor = 1)){
-  
-    ggplot() +
-      geom_sf(data = background, size = 0.2) +
-      geom_sf(data = fillground, mapping = aes(fill = to.plot  ), colour = NA) +
-      geom_sf(data = fillground, fill = NA, size = 0.05, colour = "grey90") +
-      scale_fill_viridis_c( trans = transformation, 
-                            name = fill.scale.title,
-                            limits = col.limits, 
-                            oob = scales::squish, 
-                            breaks = clr.breaks,
-                            labels = clr.labels,
-                            #option = "magma",direction = -1 
-                            guide = guide_colorbar(
-                              direction = "horizontal", barheight = unit(2, units = "mm"),
-                              barwidth = unit(50, units = "mm"), draw.ulim = F,
-                              title.position = 'top', title.hjust = 0.5, label.hjust = 0.5))+
-      labs(x = NULL, y = NULL , title = main.title, subtitle = sub.title#, caption = ""
-      )+
-      theme_map() +
-      theme(legend.position = "bottom") 
-}
-
-map.ploter.log <- function( fill.scale.title , main.title , sub.title ,
-                            background = countries,
-                            fillground = COUNTRY.ATI.shp,
-                            fillground2 = COUNTRY.ATI.shp, 
-                            transformation = "log10",
-                            to.plot = variable,
-                            n.breaks = 6
-                            ){
-  ggplot() +
-    geom_sf(data = background, size = 0.2) +
-    geom_sf(data = fillground, mapping = aes(fill = to.plot  ), colour = NA) +
-    geom_sf(data = fillground2, fill = NA, size = 0.03, colour = "grey90") +
-    scale_fill_viridis_c( trans = transformation, 
-                          name = fill.scale.title,
-                          n.breaks = n.breaks,
-                          #option = "magma",direction = -1 
-                          guide = guide_colorbar(
-                            direction = "horizontal", barheight = unit(2, units = "mm"),
-                            barwidth = unit(50, units = "mm"), draw.ulim = F,
-                            title.position = 'top', title.hjust = 0.5, label.hjust = 0.5))+
-    labs(x = NULL, y = NULL , title = main.title, subtitle = sub.title#, caption = ""
-    )+
-    theme_map() +
-    theme(legend.position = "bottom") 
-} 
-
-# set wd ----
-
-setwd("S:\\Users\\Ewan McHenry\\OneDrive - the Woodland Trust\\SoWT\\ATI")
+library(U.utilities) # devtools::install_github("EwanMcHenry/U.utilities")
 
 # load data ----
 # ati taken form cuation code, nnjoined with Awi and NFI in QGIS where that processing is quicker
-ati = read.csv("S:\\Users\\Ewan McHenry\\OneDrive - the Woodland Trust\\SoWT\\ATI\\ewan.ATI_v3.01.csv")
+load(paste0(gis.wd, "\\Data\\ATI\\ati2024-08-28curated_fromATI - 2024_08_05.csv.RData"))
 countries = st_read("S:\\Users\\Ewan McHenry\\OneDrive - the Woodland Trust\\GIS\\Treescapes analysis\\administrative boundaries\\Countries\\5countries.v1.05.shp")
 countries$area = as.numeric(st_area(countries))
 westminster.const =  st_read("S:\\Users\\Ewan McHenry\\OneDrive - the Woodland Trust\\GIS\\Treescapes analysis\\administrative boundaries\\Westminster_Parliamentary_constituencies__December_2017__Boundaries_UK_v2.01.shp")
