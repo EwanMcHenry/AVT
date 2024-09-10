@@ -35,18 +35,18 @@ bbox_uk_ireland <- uk_ireland %>% st_bbox() %>% st_as_sfc() %>% st_buffer(0) %>%
 mapping.area <- st_intersection(map_sov, bbox_uk_ireland)
 
 # data curation ----
+
 # Replace all "" with NA in character columns only
 ati <- ati %>% 
   mutate(across(where(is.character), ~na_if(.x, "")))
 ati$CountryName[ati$CountryName == "Northern Ireland" ] <- "N. Ireland" # sync northern ireland naming
-ati <- subset(ati, select = -X) #remove X column
-ati$CreatedDate <- as.Date(ati$CreatedDate, format = "%d/%m/%Y") # Convert CreatedDate to Date format
-ati$SurveyDate <- as.Date(ati$SurveyDate, format = "%d/%m/%Y") # Convert SurveyDate to Date format
-ati$VerifiedDate <- as.Date(ati$VerifiedDate, format = "%d/%m/%Y") # Convert VerifiedDate to Date format
-ati$GridReference <- gsub(" ", "", ati$GridReference)# remove all spaces from grid reference
+# ati <- subset(ati, select = -X) #remove X column - not needed since manuel fix of csv
+
 
 
 ## manuel fixes ----
+#manuel fix in csv - id 250511 had some coloums 1 row to right, cut and pasted into right spot
+
 ati$GridReference[ati$GridReference == "S025879030"] = "SO25879030"
 ati$GridReference[ati$GridReference == "J340694" & ati$CountyName == "Cheshire"] = "SJ406940" # added letter, easy using town name        
 ati$CountryName[ati$GridReference == "J3413969393" & ati$SiteName == "Belvoir Park"] = "N. Ireland" # added letter, easy using town name
@@ -128,6 +128,25 @@ ati$geometry[ati$GridReference == "SJ406940"] <- st_sfc(st_point(c(-2.8956647, 5
 # ati$northings[ati$TreeNumber == 145378 ] = ati$northings[ati$TreeNumber == 145378 ] + 5
 # 
 
+# country name fixes
+ati$CountryName[ati$CountryName %in% c(
+  "Ballaugh", "Braddan", "Castletown", "Laxey", "Malew", "Michael")] = "Isle of Man"
+ati$CountryName[ati$CountryName %in% c("Co Wicklow")] = "Republic of Ireland"
+ati$CountryName[ati$CountryName %in% c("German")] = "Germany"
+
+
+# data types ----
+ati$CreatedDate <- as.Date(ati$CreatedDate, format = "%d/%m/%Y") # Convert CreatedDate to Date format
+ati$SurveyDate <- as.Date(ati$SurveyDate, format = "%d/%m/%Y") # Convert SurveyDate to Date format
+ati$VerifiedDate <- as.Date(ati$VerifiedDate, format = "%d/%m/%Y") # Convert VerifiedDate to Date format
+ati$GridReference <- gsub(" ", "", ati$GridReference)# remove all spaces from grid reference
+ati$VeteranStatusName <- factor(ati$VeteranStatusName, levels = c("Ancient tree", "Veteran tree", "Notable tree", "Lost Ancient tree", "Lost Veteran tree", "Lost Notable tree")) # set factor levels for VeteranStatusName
+ati$CountyName <- factor(ati$CountyName) # set factor levels for CountyName
+ati$CountryName <- factor(ati$CountryName) # set factor levels for CountryName
+ati$SpeciesName <- factor(ati$SpeciesName) # set factor levels for TreeSpeciesName
+ati$LivingStatusName <- factor(ati$LivingStatusName) # set factor levels for TreeCategoryName
+ati$StandingStatusName <- factor(ati$StandingStatusName) # set factor levels for StandingStatusName
+ati$ProtectionNames <- factor(ati$ProtectionNames) # set factor levels for ProtectionNames
 
 ## syncronising irish grid refs ------ 
 one.letter <- grepl("^[A-Za-z]{1}", ati$GridReference) & !grepl("^[A-Za-z]{2}", ati$GridReference) # grid ref has 1 letter - theyre irish grid
