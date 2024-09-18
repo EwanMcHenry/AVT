@@ -44,15 +44,37 @@ countries <- countries %>%
   mutate(country = factor(country, levels = sort(unique(country))))
 
 # hex grid
-hex.grid0 = st_make_grid(countries %>% st()
-                         , c(constants$hexdist.h, constants$hexdist.v), what = "polygons", square = F)
+hex.grid0 = st_make_grid(countries %>% st_simplify(dTolerance = 100, preserveTopology = T),
+                         c(constants$hexdist.h, constants$hexdist.v), 
+                         what = "polygons", square = F)
 hex.grid = st_sf(hex.grid0) %>%
+  st_intersection(countries) %>%
   # add grid ID
   mutate(grid_id = 1:length(lengths(hex.grid0)))
 rm(hex.grid0)
+
+# workin here makin sure hex areas right and combined proper
+
+
+
+
+
+# combine hexes with same grid_id into same multipolygon - possible bug here (actually a feature) where bits of the same hex separated by water all share same attributes
+hex.grid <- hex.grid %>% 
+  st_as_sf() %>%
+  st_cast("MULTIPOLYGON") %>% # convert to polygon
+  group_by(grid_id) %>% 
+  summarise(geometry = st_union(geometry)) %>% 
+  st_sf() %>% 
+  st_cast("POLYGON") # convert to polygon
+
+
+hex.grid <- st_intersection(hex.grid, countries %>% st_simplify(dTolerance = 100, preserveTopology = T)) # remove hexes outside of countries
+
 hex.grid$hex.ha <-  st_area(hex.grid) %>% 
   set_units(value = "ha") %>%
   as.numeric()
+
 
 
 #convert ati crs
@@ -60,7 +82,9 @@ ati <- ati %>% st_transform(27700)
 
 # TABLES OF INFO ----
 tree_in_country <- st_join(ati, countries)
-  ## t country - vet status
+
+## Numbers of and proportions of records
+  ### t country - vet status
 table(tree_in_country$VeteranStatusName, tree_in_country$country) %>%
   addmargins(margin = c(1,2)) 
 
@@ -70,33 +94,33 @@ table(tree_in_country$VeteranStatusName, tree_in_country$country) %>%
   round(3) 
   
 
-## t country - form
+### t country - form
 create_ordered_table(tree_in_country, "TreeFormName", "country", type = "frequency", round_digits = 0)
 
 create_ordered_table(tree_in_country, "TreeFormName", "country", type = "proportion", round_digits = 5) %>% 
   replace_rounded_zeros_with_string(3)
 
-## t vet status - form
+### t vet status - form
 create_ordered_table(tree_in_country, "TreeFormName", "VeteranStatusName", type = "frequency")
 
 create_ordered_table(tree_in_country, "TreeFormName", "VeteranStatusName", type = "proportion", round_digits = 5) %>% 
   replace_rounded_zeros_with_string(3)
 
-## t vet status - species
+### t vet status - species
 create_ordered_table(tree_in_country, "SpeciesName", "VeteranStatusName", type = "frequency")
 
 create_ordered_table(tree_in_country, "SpeciesName", "VeteranStatusName", type = "proportion", round_digits = 5) %>% 
   replace_rounded_zeros_with_string(3)
 
-## t vet status - standing
+### t vet status - standing
 create_ordered_table(tree_in_country, "StandingStatusName", "VeteranStatusName", type = "frequency")
 
 create_ordered_table(tree_in_country, "StandingStatusName", "VeteranStatusName", type = "proportion", round_digits = 5) %>% 
   replace_rounded_zeros_with_string(3)
 
-# ati record density - country
+## record density - country
 
-# t - AVT type density by country -  per 100 km2, a 10 x 10 km hectad
+### t - density AVT type - country -  per 100 km2, a 10 x 10 km hectad
 T_avt_dens <- table(tree_in_country$VeteranStatusName, tree_in_country$country) %>% 
   addmargins(margin = c(1,2)) %>% 
   sweep(2, c(countries$area.ha, sum(countries$area.ha)), "/")*10000 
@@ -113,33 +137,33 @@ ggplot(data = countries) +
 # HEX MAPS ----
   ## hex map table - Ancient, vet and lost ----
 
-tree_in_maphex <- st_join(ati, hexes.for.plot) # join layers
-tree_in_maphex$id = factor(tree_in_maphex$id, levels =  unique(hexes.for.plot$id  )) # make factor so that consts with 0 still included
-#tables of lost and remaining and combine
-maphex.ther.table = addmargins(table(tree_in_maphex$id[tree_in_maphex$lost==0], tree_in_maphex$ancient[tree_in_maphex$lost==0]), margin = 2)
-maphex.lost.table = addmargins(table(tree_in_maphex$id[tree_in_maphex$lost==1], tree_in_maphex$ancient[tree_in_maphex$lost==1]), margin = 2)
-colnames(maphex.ther.table) = c("Ancient", "Veteran", "Tot")
-colnames(maphex.lost.table) = paste(colnames(maphex.ther.table), "lost", sep = ".")
-maphex.table = as.tibble( cbind ( rownames(maphex.ther.table) , maphex.ther.table , maphex.lost.table ))
-maphex.table[, colnames(maphex.table) %in% c(colnames(maphex.ther.table), colnames(maphex.lost.table))] <- 
-  sapply(maphex.table[, colnames(maphex.table) %in% c(colnames(maphex.ther.table), colnames(maphex.lost.table))], as.integer)
-# proportion lost - not convinced by this, needs checking and the names later as well if added
-# maphex.table$Prop.ancient.lost = maphex.table$Ancient.lost/ sum(maphex.table$Ancient.lost, maphex.table$Ancient) *10^6
-# maphex.table$Prop.veterans.lost = maphex.table$Veteran.lost/ sum(maphex.table$Veteran.lost, maphex.table$Veteran) *10^6
-# maphex.table$Prop.total.lost = maphex.table$Tot.lost/ sum(maphex.table$Tot.lost, maphex.table$Tot) *10^6
-
-# area of consitituency in km sq
-maphex.table = merge(hexes.for.plot , maphex.table, by.x = "id", by.y =  "V1" )
-maphex.table$area = maphex.table$hex.area / 1000000
-maphex.table = st_set_geometry(maphex.table, NULL)
-
-# # gss code
-# maphex.table$gss_code = merge(as.data.frame(id) , as.data.frame(maphex.table) , by.x = "id" , by.y =  "V1" )$pcon17cd
+tree_in_maphex <- st_join(ati, hex.grid) # join layers
+tree_in_maphex$grid_id <- factor(tree_in_maphex$grid_id, levels =  unique(tree_in_maphex$grid_id  )) # make factor so that consts with 0 still included
+# tables of N ATI vet types by 
+t_hex.VeteranStatus <-  addmargins(table(tree_in_maphex$grid_id, tree_in_maphex$VeteranStatusName), margin = 2)
+maphex.table <- as.tibble( cbind ( rownames(t_hex.VeteranStatus) , t_hex.VeteranStatus ))
+maphex.table[, colnames(maphex.table) %in% c(colnames(t_hex.VeteranStatus))] <- # those cols not... the id??
+  sapply(maphex.table[, colnames(maphex.table) %in% c(colnames(t_hex.VeteranStatus))], as.integer) # make sure theyre integers
+# add hex area from hex.grid
+maphex.table$hex.ha <- hex.grid$hex.ha
 
 # density of ATs per 
-maphex.table$Ancient.dens = maphex.table$Ancient/maphex.table$area
-maphex.table$vet.dens = maphex.table$Veteran/maphex.table$area
-maphex.table$tot.dens = maphex.table$Tot/maphex.table$area
+maphex.table$dens.ancient = maphex.table$`Ancient tree`/maphex.table$hex.ha
+maphex.table$dens.vet = maphex.table$`Veteran tree`/maphex.table$hex.ha
+maphex.table$dens.notable = maphex.table$`Notable tree`/maphex.table$hex.ha
+maphex.table$dens.avt = (maphex.table$`Ancient tree` + maphex.table$`Veteran tree`)/maphex.table$hex.ha
+maphex.table$dens.all = (maphex.table$`Ancient tree` + maphex.table$`Veteran tree` + maphex.table$`Notable tree`)/maphex.table$hex.ha
+
+# proportion lost 
+maphex.table$p.ancient.lost = maphex.table$`Lost Ancient tree`/ sum(maphex.table$`Ancient tree`, maphex.table$`Lost Ancient tree`) 
+maphex.table$p.vet.lost <- maphex.table$`Lost Veteran tree`/ sum(maphex.table$`Veteran tree`, maphex.table$`Lost Veteran tree`)
+maphex.table$p.notable.lost <- maphex.table$`Lost Notable tree`/sum(maphex.table$`Notable tree`, maphex.table$`Lost Notable tree`)
+maphex.table$p.avt.lost <- sum(maphex.table$`Lost Ancient tree`, maphex.table$`Lost Veteran tree`)/sum(maphex.table$`Ancient tree`, maphex.table$`Lost Ancient tree`, maphex.table$`Veteran tree`, maphex.table$`Lost Veteran tree`)
+maphex.table$p.all.lost <- sum(maphex.table$`Lost Ancient tree`, maphex.table$`Lost Veteran tree`, maphex.table$`Lost Notable tree`)/sum(maphex.table$`Ancient tree`, maphex.table$`Lost Ancient tree`, maphex.table$`Veteran tree`, maphex.table$`Lost Veteran tree`, maphex.table$`Notable tree`, maphex.table$`Lost Notable tree`)
+
+maphex.table = st_set_geometry(maphex.table, NULL)
+
+
 
 # name and rearrange coloums
 colnames(maphex.table) = c( "id"  , colnames(maphex.table)[2:6], 
@@ -155,7 +179,7 @@ maphex.table = maphex.table [, c("id", "area",
 write.csv(maphex.table,file = "maphex.table.csv" )
 
   ## HEX MAP HEATMAPS ----
-hex.ATI.shp = merge(hexes.for.plot, maphex.table , by.x = "id", by.y = "id")
+hex.ATI.shp = merge(hex.grid, maphex.table , by.x = "id", by.y = "id")
 scale.name = "Hex"
 ### COUNT HEX MAPS ----
 #### ATI TOTAL COUNT HEXMAPS ----
