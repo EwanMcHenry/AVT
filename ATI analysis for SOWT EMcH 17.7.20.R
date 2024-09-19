@@ -30,13 +30,14 @@ countries = st_read("D:\\Users\\Ewan McHenry\\OneDrive - the Woodland Trust\\GIS
 
 # configure ----
 constants <- list(hexdist.h = 10000,
-                  hexdist.v = 10000
+                  hexdist.v = 10000,
+                  hexing_countries = c("England", "Scotland", "Wales", "N.Ireland")
 )
 
 # curation ----
 
 # add countries area
-countries$area.ha <-  st_area(countries) %>% 
+countries$country.ha <-  st_area(countries) %>% 
   set_units(value = "ha") %>%
   as.numeric()
 countries <- countries %>% 
@@ -44,38 +45,26 @@ countries <- countries %>%
   mutate(country = factor(country, levels = sort(unique(country))))
 
 # hex grid
-hex.grid0 = st_make_grid(countries %>% st_simplify(dTolerance = 100, preserveTopology = T),
+hexing_area <- countries[countries$country %in% constants$hexing_countries,] %>% 
+  st_union() %>% 
+  st_remove_holes() %>%  
+  st_simplify(dTolerance = 100, preserveTopology = T) %>% 
+  st_make_valid()
+
+hex.grid0 = st_make_grid(hexing_area,
                          c(constants$hexdist.h, constants$hexdist.v), 
                          what = "polygons", square = F)
-hex.grid = st_sf(hex.grid0) %>%
-  st_intersection(countries) %>%
-  # add grid ID
-  mutate(grid_id = 1:length(lengths(hex.grid0)))
-rm(hex.grid0)
+hex.grid0 <- st_sf(grid_id = 1:length(hex.grid0), geometry = hex.grid0) # add hex grid id
 
-# workin here makin sure hex areas right and combined proper
+hex.grid = hex.grid0 %>%
+  st_intersection(hexing_area) 
+# note hexes with same grid_id are the same multipolygon feature - possible bug/feature where bits of the same hex separated by water all share same attributes
 
-
-
-
-
-# combine hexes with same grid_id into same multipolygon - possible bug here (actually a feature) where bits of the same hex separated by water all share same attributes
-hex.grid <- hex.grid %>% 
-  st_as_sf() %>%
-  st_cast("MULTIPOLYGON") %>% # convert to polygon
-  group_by(grid_id) %>% 
-  summarise(geometry = st_union(geometry)) %>% 
-  st_sf() %>% 
-  st_cast("POLYGON") # convert to polygon
-
-
-hex.grid <- st_intersection(hex.grid, countries %>% st_simplify(dTolerance = 100, preserveTopology = T)) # remove hexes outside of countries
+rm(hex.grid0, hexing_area)
 
 hex.grid$hex.ha <-  st_area(hex.grid) %>% 
   set_units(value = "ha") %>%
   as.numeric()
-
-
 
 #convert ati crs
 ati <- ati %>% st_transform(27700)
@@ -83,8 +72,8 @@ ati <- ati %>% st_transform(27700)
 # TABLES OF INFO ----
 tree_in_country <- st_join(ati, countries)
 
-## Numbers of and proportions of records
-  ### t country - vet status
+## Numbers of and proportions of records ----
+### t country - vet status----
 table(tree_in_country$VeteranStatusName, tree_in_country$country) %>%
   addmargins(margin = c(1,2)) 
 
@@ -94,65 +83,68 @@ table(tree_in_country$VeteranStatusName, tree_in_country$country) %>%
   round(3) 
   
 
-### t country - form
+### t country - form----
 create_ordered_table(tree_in_country, "TreeFormName", "country", type = "frequency", round_digits = 0)
 
 create_ordered_table(tree_in_country, "TreeFormName", "country", type = "proportion", round_digits = 5) %>% 
   replace_rounded_zeros_with_string(3)
 
-### t vet status - form
+### t vet status - form----
 create_ordered_table(tree_in_country, "TreeFormName", "VeteranStatusName", type = "frequency")
 
 create_ordered_table(tree_in_country, "TreeFormName", "VeteranStatusName", type = "proportion", round_digits = 5) %>% 
   replace_rounded_zeros_with_string(3)
 
-### t vet status - species
+### t vet status - species----
 create_ordered_table(tree_in_country, "SpeciesName", "VeteranStatusName", type = "frequency")
 
 create_ordered_table(tree_in_country, "SpeciesName", "VeteranStatusName", type = "proportion", round_digits = 5) %>% 
   replace_rounded_zeros_with_string(3)
 
-### t vet status - standing
+### t vet status - standing----
 create_ordered_table(tree_in_country, "StandingStatusName", "VeteranStatusName", type = "frequency")
 
 create_ordered_table(tree_in_country, "StandingStatusName", "VeteranStatusName", type = "proportion", round_digits = 5) %>% 
   replace_rounded_zeros_with_string(3)
 
-## record density - country
+## record density - country----
 
-### t - density AVT type - country -  per 100 km2, a 10 x 10 km hectad
+### t - density AVT type - country -  per 100 km2, a 10 x 10 km hectad----
 T_avt_dens <- table(tree_in_country$VeteranStatusName, tree_in_country$country) %>% 
   addmargins(margin = c(1,2)) %>% 
-  sweep(2, c(countries$area.ha, sum(countries$area.ha)), "/")*10000 
+  sweep(2, c(countries$country.ha, sum(countries$country.ha)), "/")*10000 
 colnames(T_avt_dens)[ncol(T_avt_dens)] <- "All countries combined"
 rownames(T_avt_dens)[nrow(T_avt_dens)] <- "All AVT types combined"
 
 replace_rounded_zeros_with_string(T_avt_dens, 2)
 
-# Records MAPS ----
+# Record points MAPS ----
 ggplot(data = countries) +
   geom_sf() +
   geom_sf(data = ati, size = 1, shape = 23, fill = "darkred") 
 
 # HEX MAPS ----
-  ## hex map table - Ancient, vet and lost ----
+  ## curation - hex table - Ancient, vet and lost ----
 
 tree_in_maphex <- st_join(ati, hex.grid) # join layers
 tree_in_maphex$grid_id <- factor(tree_in_maphex$grid_id, levels =  unique(tree_in_maphex$grid_id  )) # make factor so that consts with 0 still included
-# tables of N ATI vet types by 
+# tables of N ATI vet types by hex 
 t_hex.VeteranStatus <-  addmargins(table(tree_in_maphex$grid_id, tree_in_maphex$VeteranStatusName), margin = 2)
-maphex.table <- as.tibble( cbind ( rownames(t_hex.VeteranStatus) , t_hex.VeteranStatus ))
+maphex.table <- as_tibble( cbind ( rownames(t_hex.VeteranStatus) , t_hex.VeteranStatus ))
 maphex.table[, colnames(maphex.table) %in% c(colnames(t_hex.VeteranStatus))] <- # those cols not... the id??
   sapply(maphex.table[, colnames(maphex.table) %in% c(colnames(t_hex.VeteranStatus))], as.integer) # make sure theyre integers
-# add hex area from hex.grid
-maphex.table$hex.ha <- hex.grid$hex.ha
+# name grid_id col in maphex.table
+colnames(maphex.table)[1] <- "grid_id"
 
-# density of ATs per 
-maphex.table$dens.ancient = maphex.table$`Ancient tree`/maphex.table$hex.ha
-maphex.table$dens.vet = maphex.table$`Veteran tree`/maphex.table$hex.ha
-maphex.table$dens.notable = maphex.table$`Notable tree`/maphex.table$hex.ha
-maphex.table$dens.avt = (maphex.table$`Ancient tree` + maphex.table$`Veteran tree`)/maphex.table$hex.ha
-maphex.table$dens.all = (maphex.table$`Ancient tree` + maphex.table$`Veteran tree` + maphex.table$`Notable tree`)/maphex.table$hex.ha
+# add hex area from hex.grid, using grid_id
+maphex.table$hex.ha <- hex.grid$hex.ha[match(maphex.table$grid_id, hex.grid$grid_id)]
+
+# density of ATs per km sq
+maphex.table$dens.ancient = 100* maphex.table$`Ancient tree`/maphex.table$hex.ha
+maphex.table$dens.vet = 100* maphex.table$`Veteran tree`/maphex.table$hex.ha
+maphex.table$dens.notable = 100* maphex.table$`Notable tree`/maphex.table$hex.ha
+maphex.table$dens.avt = 100* (maphex.table$`Ancient tree` + maphex.table$`Veteran tree`)/maphex.table$hex.ha
+maphex.table$dens.all = 100* (maphex.table$`Ancient tree` + maphex.table$`Veteran tree` + maphex.table$`Notable tree`)/maphex.table$hex.ha
 
 # proportion lost 
 maphex.table$p.ancient.lost = maphex.table$`Lost Ancient tree`/ sum(maphex.table$`Ancient tree`, maphex.table$`Lost Ancient tree`) 
@@ -161,45 +153,132 @@ maphex.table$p.notable.lost <- maphex.table$`Lost Notable tree`/sum(maphex.table
 maphex.table$p.avt.lost <- sum(maphex.table$`Lost Ancient tree`, maphex.table$`Lost Veteran tree`)/sum(maphex.table$`Ancient tree`, maphex.table$`Lost Ancient tree`, maphex.table$`Veteran tree`, maphex.table$`Lost Veteran tree`)
 maphex.table$p.all.lost <- sum(maphex.table$`Lost Ancient tree`, maphex.table$`Lost Veteran tree`, maphex.table$`Lost Notable tree`)/sum(maphex.table$`Ancient tree`, maphex.table$`Lost Ancient tree`, maphex.table$`Veteran tree`, maphex.table$`Lost Veteran tree`, maphex.table$`Notable tree`, maphex.table$`Lost Notable tree`)
 
-maphex.table = st_set_geometry(maphex.table, NULL)
-
-
-
-# name and rearrange coloums
-colnames(maphex.table) = c( "id"  , colnames(maphex.table)[2:6], 
-                        "Ancient.count", "Veteran.count" , "ATI.count" , 
-                        "ancient.lost", "Veterans.lost", "Total.lost", "area" , #"Ancient.loss.per.Million",  "Veteran.loss.per.Million", "Total.loss.per.Million",
-                        "ancient.density", "veteran.density", "ATI.density")
-maphex.table = maphex.table [, c("id", "area", 
-                         "Ancient.count", "ancient.density", "Veteran.count", "veteran.density", "ATI.count", "ATI.density", 
-                         "ancient.lost",#"Ancient.loss.per.Million", 
-                         "Veterans.lost", # "Veteran.loss.per.Million",
-                         "Total.lost"#, "Total.loss.per.Million"
-                         )]
-write.csv(maphex.table,file = "maphex.table.csv" )
+## merge hex grid with maphex.table
+hex.ATI.shp = merge(hex.grid,  maphex.table[ , -which(names(maphex.table) == "hex.ha")], by = "grid_id", by.y = "grid_id", all.x = TRUE)
+#replace new NAs from maphex.table with 0, except for the proportion lost columns
+hex.ATI.shp[is.na(hex.ATI.shp)] <- 0
+hex.ATI.shp$`p.ancient.lost`[hex.ATI.shp$`Ancient tree` == 0] <- NA
+hex.ATI.shp$`p.vet.lost`[hex.ATI.shp$`Veteran tree` == 0] <- NA
+hex.ATI.shp$`p.notable.lost`[hex.ATI.shp$`Notable tree` == 0] <- NA
+hex.ATI.shp$`p.avt.lost`[hex.ATI.shp$`Ancient tree` + hex.ATI.shp$`Veteran tree` == 0] <- NA
+hex.ATI.shp$`p.all.lost`[hex.ATI.shp$`Ancient tree` + hex.ATI.shp$`Veteran tree` + hex.ATI.shp$`Notable tree` == 0] <- NA
 
   ## HEX MAP HEATMAPS ----
-hex.ATI.shp = merge(hex.grid, maphex.table , by.x = "id", by.y = "id")
 scale.name = "Hex"
 ### COUNT HEX MAPS ----
 #### ATI TOTAL COUNT HEXMAPS ----
-var.name = "ATI.count"
+var.name = "Ancient tree"
 main.title = "ATI records"
 sub.title = NULL
 fill.scale.title = expression(paste("Ancient and veteran tree records per km"^"2",sep = ""))
 colour.limits = c(0,1000)
-transformation = "log10"
-dividor = 1
+var.scale.factor = 1
 
-hex.ATI.shp$area2 = hex.ATI.shp$area
-hex.ATI.shp$area2[hex.ATI.shp$area2 <0.1 ] = 0.1
-variable = (hex.ATI.shp[[which(colnames(hex.ATI.shp) ==var.name)]]/dividor)/hex.ATI.shp$area
+# hex.ATI.shp$area2 = hex.ATI.shp$area
+# hex.ATI.shp$area2[hex.ATI.shp$area2 <0.1 ] = 0.1
+variable = hex.ATI.shp[[which(colnames(hex.ATI.shp) ==var.name)]] * var.scale.factor
 
-ati.hex.map =   map.ploter.log( fill.scale.title = fill.scale.title , main.title = main.title , sub.title = sub.title,
-                                background = countries, fillground = hex.ATI.shp, fillground2 = NULL,
-                                transformation = transformation, 
-                                n.breaks = 6,
-                                to.plot = variable)
+ati.hex.map =   map.ploter( fill.scale.title = fill.scale.title , 
+                            main.title = main.title , 
+                            sub.title = sub.title,
+                            fillground = hex.ATI.shp, 
+                            background = countries,
+                            pltly.text = NULL,
+                            transformation = "log10",
+                            col.limits = c(0.000001, quantile(variable, probs = 0.98, na.rm = T)),
+                            to.plot = variable,
+                            clr.breaks = colour.brks(lims = col.limits, n = 5, round_to = 1, just_pretty = T),
+                            clr.labels = colour.lable(x = variable, lims = col.limits, n = 5, dividor = 1,
+                                                      round_to = 1, just_pretty = T),
+                            use.viridis = TRUE,
+                            low.col = "white",
+                            high.col = "red",
+                            fill.line_size = 0.05,
+                            fill.line_colour = NA,
+                            background.fill = "grey90",
+                            background.size = 0.05,
+                            background.colour = "black")
+   
+############### chat gpt serving    
+map.ploter(fill.scale.title = expression(paste("Ancient and veteran tree records per km"^"2",sep = "")),
+           main.title = "ATI records" ,
+           sub.title = NULL,
+           fillground = hex.ATI.shp,
+           background = countries,
+           pltly.text = NULL,
+           transformation = "log10",
+           to.plot = variable,
+           col.limits = c(0.000001, quantile(variable, probs = 0.98, na.rm = T)),
+           use.viridis = TRUE,
+           low.col = "white",
+           high.col = "red",
+           fill.line_size = 0.05,
+           fill.line_colour = NA,
+           background.fill = "grey90",
+           background.size = 0.05,
+           background.colour = "black",
+           n.breaks = 5,
+           round_to = 1,
+           just_pretty = T
+) 
+clr.breaks = colour.brks(lims =  c(0.000001, quantile(variable, probs = 0.98, na.rm = T)), 
+                         n = 5, 
+                         round_to = round_to, just_pretty = just_pretty, transformation = transformation)
+clr.labels = colour.lable(x = to.plot, lims = col.limits, 
+                          n = n.breaks, round_to = round_to, just_pretty = just_pretty, 
+                          transformation = transformation)
+
+
+
+
+map.ploter (fill.scale.title = fill.scale.title,
+            main.title = main.title,
+            sub.title = sub.title,
+            fillground = hex.ATI.shp,
+            background = countries,
+            pltly.text = NULL,
+            transformation = "identity",
+            to.plot = "dens.avt",  # Pass column name, not data
+            col.limits = c(0, quantile(variable, probs = 0.98, na.rm = TRUE)),
+            use.viridis = TRUE,
+            low.col = "white",
+            high.col = "red",
+            fill.line_size = 0.05,
+            fill.line_colour = "grey90",
+            background.fill = "grey90",
+            background.size = 0.05,
+            background.colour = "black",
+            n.breaks = 5,
+            round_to = 1,
+            just_pretty = T
+) 
+  
+ati.hex.map <- map.ploter(
+  
+  
+  clr.breaks = colour.brks(lims = c(0.000001, quantile(variable, probs = 0.98, na.rm = TRUE)), 
+                           n = 5, round_to = 1, just_pretty = TRUE, 
+                           transformation = "log10"),
+  clr.labels = colour.lable(x = variable, lims = c(0.000001, quantile(variable, probs = 0.98, na.rm = TRUE)), 
+                            n = 5, dividor = 1, round_to = 1, just_pretty = TRUE, 
+                            transformation = "log10"),
+  use.viridis = TRUE,
+  low.col = "white",
+  high.col = "red",
+  fill.line_size = 0.05,
+  fill.line_colour = NA,
+  background.fill = "grey90",
+  background.size = 0.05,
+  background.colour = "black"
+)
+
+#######################
+
+
+
+
+
+                      
 
 ati.hex.map =   ggplot() +
   geom_sf(data = countries, size = 0.2) +
@@ -235,9 +314,9 @@ sub.title = "per 10km high Hexagon"
 fill.scale.title = "ATI records"
 colour.limits = c(0,1000)
 transformation = "identity"
-dividor = 1
+var.scale.factor = 1
 
-variable = hex.ATI.shp[[which(colnames(hex.ATI.shp) == var.name)]] / dividor
+variable = hex.ATI.shp[[which(colnames(hex.ATI.shp) == var.name)]] / var.scale.factor
 
 
 labels <- c()
@@ -261,7 +340,7 @@ clr.breaks = colour.brks(lims = colour.limits)
 clr.labels = colour.lable(x = variable ,
                           lims = colour.limits , 
                           breaks = colour.brks(colour.limits ),
-                          dividor = 1)
+                          var.scale.factor = 1)
 
 sowt.plot = ggplot() +
   geom_sf(data = countries, size = 0.2) +
@@ -325,9 +404,9 @@ sub.title = NULL
 fill.scale.title = "Ancient tree records"
 colour.limits = c(0,max(hex.ATI.shp[[which(colnames(hex.ATI.shp) ==var.name)]]))
 transformation = "log10"
-dividor = 1
+var.scale.factor = 1
 
-variable = hex.ATI.shp[[which(colnames(hex.ATI.shp) ==var.name)]]/ dividor
+variable = hex.ATI.shp[[which(colnames(hex.ATI.shp) ==var.name)]]/ var.scale.factor
 
 ancient.hex.map =   map.ploter.log( fill.scale.title = fill.scale.title , main.title = main.title , sub.title = sub.title,
                                     background = countries, fillground = hex.ATI.shp, fillground2 = hex.ATI.shp,
@@ -343,9 +422,9 @@ sub.title = "2017 Westminster constituencies"
 fill.scale.title = "Veteran tree records"
 colour.limits = c(0,max(hex.ATI.shp[[which(colnames(hex.ATI.shp) ==var.name)]]))
 transformation = "log10"
-dividor = 1
+var.scale.factor = 1
 
-variable = hex.ATI.shp[[which(colnames(hex.ATI.shp) ==var.name)]] / dividor
+variable = hex.ATI.shp[[which(colnames(hex.ATI.shp) ==var.name)]] / var.scale.factor
 
 vet.hex.map =   map.ploter.log( fill.scale.title = fill.scale.title , main.title = main.title , sub.title = sub.title,
                                 background = countries, fillground = hex.ATI.shp, fillground2 = hex.ATI.shp,
@@ -363,9 +442,9 @@ main.title = expression(paste("ATI records per km"^"2",sep = ""))
 sub.title = NULL
 fill.scale.title = expression(paste("ATI records per km"^"2",sep = ""))
 colour.limits = c(0,2)
-dividor = 1
+var.scale.factor = 1
 
-variable = hex.ATI.shp[[which(colnames(hex.ATI.shp) ==var.name)]] / dividor
+variable = hex.ATI.shp[[which(colnames(hex.ATI.shp) ==var.name)]] / var.scale.factor
 
 totdens.hex.map = map.ploter.ident (
   fill.scale.title = fill.scale.title , main.title = main.title , sub.title = sub.title,
@@ -376,7 +455,7 @@ totdens.hex.map = map.ploter.ident (
   clr.breaks = colour.brks(lims = colour.limits),
   clr.labels = colour.lable(x = variable ,
                             lims = colour.limits , 
-                            breaks = colour.brks(colour.limits ), dividor = dividor))
+                            breaks = colour.brks(colour.limits ), var.scale.factor = var.scale.factor))
 ggsave(plot = totdens.hex.map , paste(scale.name, var.name, "map1.pdf"), height = 5, width = 5)
 
 
@@ -386,9 +465,9 @@ main.title = expression(paste("Ancient tree records per km"^"2",sep = ""))
 sub.title = NULL
 fill.scale.title = expression(paste("Ancient tree records per km"^"2",sep = ""))
 colour.limits = c(0,5)
-dividor = 1
+var.scale.factor = 1
 
-variable = hex.ATI.shp[[which(colnames(hex.ATI.shp) ==var.name)]] / dividor
+variable = hex.ATI.shp[[which(colnames(hex.ATI.shp) ==var.name)]] / var.scale.factor
 
 ancientdens.hex.map = map.ploter.ident (
   fill.scale.title = fill.scale.title , main.title = main.title , sub.title = sub.title,
@@ -399,7 +478,7 @@ ancientdens.hex.map = map.ploter.ident (
   clr.breaks = colour.brks(lims = colour.limits),
   clr.labels = colour.lable(x = variable ,
                             lims = colour.limits , 
-                            breaks = colour.brks(colour.limits ), dividor = dividor))
+                            breaks = colour.brks(colour.limits ), var.scale.factor = var.scale.factor))
 ggsave(plot = ancientdens.hex.map , paste(scale.name, var.name, "map.pdf"))
 
 #### VET DENS HEXMAP ----
@@ -408,9 +487,9 @@ main.title = expression(paste("Veteran tree records per km"^"2",sep = ""))
 sub.title = NULL
 fill.scale.title = expression(paste("Veteran tree records per km"^"2",sep = ""))
 colour.limits = c(0, 5)
-dividor = 1
+var.scale.factor = 1
 
-variable = hex.ATI.shp[[which(colnames(hex.ATI.shp) ==var.name)]] / dividor
+variable = hex.ATI.shp[[which(colnames(hex.ATI.shp) ==var.name)]] / var.scale.factor
 
 vetdens.hex.map = map.ploter.ident (
   fill.scale.title = fill.scale.title , main.title = main.title , sub.title = sub.title,
@@ -421,7 +500,7 @@ vetdens.hex.map = map.ploter.ident (
   clr.breaks = colour.brks(lims = colour.limits),
   clr.labels = colour.lable(x = variable ,
                             lims = colour.limits , 
-                            breaks = colour.brks(colour.limits ), dividor = dividor))
+                            breaks = colour.brks(colour.limits ), var.scale.factor = var.scale.factor))
 ggsave(plot = vetdens.hex.map , paste(scale.name, var.name, "map.pdf"))
 
 
@@ -482,10 +561,10 @@ write.csv(MP.table,file = "MP.table.csv" )
     fill.scale.title = "ATI records"
     colour.limits = c(0,max(MP.ATI.shp[[which(colnames(MP.ATI.shp) ==var.name)]]))
     transformation = "log10"
-    dividor = 1
+    var.scale.factor = 1
     
         # boundry map
-    variable = MP.ATI.shp[[which(colnames(MP.ATI.shp) ==var.name)]]/dividor
+    variable = MP.ATI.shp[[which(colnames(MP.ATI.shp) ==var.name)]] * var.scale.factor
     
     ati.mp.map =   map.ploter.log( fill.scale.title = fill.scale.title , main.title = main.title , sub.title = sub.title,
                     background = countries, fillground = MP.ATI.shp, fillground2 = MP.ATI.shp,
@@ -496,7 +575,7 @@ write.csv(MP.table,file = "MP.table.csv" )
     ggsave(plot = ati.mp.map ,paste(scale.name, var.name, "map.svg"))
     
         # hex map
-    variable = westhex.ATI[[which(colnames(westhex.ATI) ==var.name)]]/dividor    
+    variable = westhex.ATI[[which(colnames(westhex.ATI) ==var.name)]] * var.scale.factor    
     
     tot.mp.hexmap =  map.ploter.log( fill.scale.title = fill.scale.title , main.title = main.title , sub.title = sub.title,
                     background = NULL,
@@ -514,10 +593,10 @@ write.csv(MP.table,file = "MP.table.csv" )
     fill.scale.title = "Ancient tree records"
     colour.limits = c(0,max(MP.ATI.shp[[which(colnames(MP.ATI.shp) ==var.name)]]))
     transformation = "log10"
-    dividor = 1
+    var.scale.factor = 1
     
         # boundry map
-        variable = MP.ATI.shp[[which(colnames(MP.ATI.shp) ==var.name)]]/ dividor
+        variable = MP.ATI.shp[[which(colnames(MP.ATI.shp) ==var.name)]]/ var.scale.factor
         
         ancient.mp.map =   map.ploter.log( fill.scale.title = fill.scale.title , main.title = main.title , sub.title = sub.title,
                                            background = countries, fillground = MP.ATI.shp, fillground2 = MP.ATI.shp,
@@ -545,10 +624,10 @@ write.csv(MP.table,file = "MP.table.csv" )
     fill.scale.title = "Veteran tree records"
     colour.limits = c(0,max(MP.ATI.shp[[which(colnames(MP.ATI.shp) ==var.name)]]))
     transformation = "log10"
-    dividor = 1
+    var.scale.factor = 1
     
         # boundry map
-        variable = MP.ATI.shp[[which(colnames(MP.ATI.shp) ==var.name)]] / dividor
+        variable = MP.ATI.shp[[which(colnames(MP.ATI.shp) ==var.name)]] / var.scale.factor
         
         vet.mp.map =   map.ploter.log( fill.scale.title = fill.scale.title , main.title = main.title , sub.title = sub.title,
                                        background = countries, fillground = MP.ATI.shp, fillground2 = MP.ATI.shp,
@@ -576,10 +655,10 @@ write.csv(MP.table,file = "MP.table.csv" )
         sub.title = "2017 Westminster constituencies"
         fill.scale.title = expression(paste("ATI records per km"^"2",sep = ""))
         colour.limits = c(0,5)
-        dividor = 1
+        var.scale.factor = 1
         
         # boundry map
-        variable = MP.ATI.shp[[which(colnames(MP.ATI.shp) ==var.name)]] / dividor
+        variable = MP.ATI.shp[[which(colnames(MP.ATI.shp) ==var.name)]] / var.scale.factor
 
         totdens.mp.map = map.ploter.ident (
           fill.scale.title = fill.scale.title , main.title = main.title , sub.title = sub.title,
@@ -590,7 +669,7 @@ write.csv(MP.table,file = "MP.table.csv" )
           clr.breaks = colour.brks(lims = colour.limits),
           clr.labels = colour.lable(x = variable ,
                                     lims = colour.limits , 
-                                    breaks = colour.brks(colour.limits ), dividor = dividor))
+                                    breaks = colour.brks(colour.limits ), var.scale.factor = var.scale.factor))
         ggsave(plot = totdens.mp.map , paste(scale.name, var.name, "map.pdf"))
         
         
@@ -606,7 +685,7 @@ write.csv(MP.table,file = "MP.table.csv" )
           clr.breaks = colour.brks(lims = colour.limits),
           clr.labels = colour.lable(x = variable ,
                                     lims = colour.limits , 
-                                    breaks = colour.brks(colour.limits ), dividor = dividor))
+                                    breaks = colour.brks(colour.limits ), var.scale.factor = var.scale.factor))
         ggsave(plot = totdens.mp.hexmap, paste(scale.name,var.name, "hexmap.pdf"))
         
         
@@ -616,9 +695,9 @@ write.csv(MP.table,file = "MP.table.csv" )
     sub.title = "2017 Westminster constituencies"
     fill.scale.title = expression(paste("Ancient tree records per km"^"2",sep = ""))
     colour.limits = c(0,5)
-    dividor = 1
+    var.scale.factor = 1
         # boundry map
-        variable = MP.ATI.shp[[which(colnames(MP.ATI.shp) ==var.name)]] / dividor
+        variable = MP.ATI.shp[[which(colnames(MP.ATI.shp) ==var.name)]] / var.scale.factor
 
         ancientdens.mp.map = map.ploter.ident (
           fill.scale.title = fill.scale.title , main.title = main.title , sub.title = sub.title,
@@ -629,7 +708,7 @@ write.csv(MP.table,file = "MP.table.csv" )
           clr.breaks = colour.brks(lims = colour.limits),
           clr.labels = colour.lable(x = variable ,
                                     lims = colour.limits , 
-                                    breaks = colour.brks(colour.limits ), dividor = dividor))
+                                    breaks = colour.brks(colour.limits ), var.scale.factor = var.scale.factor))
         ggsave(plot = ancientdens.mp.map , paste(scale.name, var.name, "map.pdf"))
         
         # hex map
@@ -644,7 +723,7 @@ write.csv(MP.table,file = "MP.table.csv" )
           clr.breaks = colour.brks(lims = colour.limits),
           clr.labels = colour.lable(x = variable ,
                                     lims = colour.limits , 
-                                    breaks = colour.brks(colour.limits ), dividor = dividor))
+                                    breaks = colour.brks(colour.limits ), var.scale.factor = var.scale.factor))
         ggsave(plot = ancientdens.mp.hexmap, paste(scale.name,var.name, "hexmap.pdf"))
         
       #### veteran records ----
@@ -653,9 +732,9 @@ write.csv(MP.table,file = "MP.table.csv" )
     sub.title = "2017 Westminster constituencies"
     fill.scale.title = expression(paste("Veteran tree records per km"^"2",sep = ""))
     colour.limits = c(0, 5)
-    dividor = 1
+    var.scale.factor = 1
         # boundry map
-        variable = MP.ATI.shp[[which(colnames(MP.ATI.shp) ==var.name)]] / dividor
+        variable = MP.ATI.shp[[which(colnames(MP.ATI.shp) ==var.name)]] / var.scale.factor
         
         vetdens.mp.map = map.ploter.ident (
           fill.scale.title = fill.scale.title , main.title = main.title , sub.title = sub.title,
@@ -666,7 +745,7 @@ write.csv(MP.table,file = "MP.table.csv" )
           clr.breaks = colour.brks(lims = colour.limits),
           clr.labels = colour.lable(x = variable ,
                                     lims = colour.limits , 
-                                    breaks = colour.brks(colour.limits ), dividor = dividor))
+                                    breaks = colour.brks(colour.limits ), var.scale.factor = var.scale.factor))
         ggsave(plot = vetdens.mp.map , paste(scale.name, var.name, "map.pdf"))
         
         # hex map
@@ -681,7 +760,7 @@ write.csv(MP.table,file = "MP.table.csv" )
           clr.breaks = colour.brks(lims = colour.limits),
           clr.labels = colour.lable(x = variable ,
                                     lims = colour.limits , 
-                                    breaks = colour.brks(colour.limits ), dividor = dividor))
+                                    breaks = colour.brks(colour.limits ), var.scale.factor = var.scale.factor))
         ggsave(plot = vetdens.mp.hexmap, paste(scale.name,var.name, "hexmap.pdf"))
         
         
@@ -699,9 +778,9 @@ sub.title = "By country"
 fill.scale.title = "ATI records (thousands)"
 colour.limits = c(0,ati.pretty.max)
 transformation = "log10"
-dividor = 1000
+var.scale.factor = 1000
 
-variable = COUNTRY.ATI.shp[[which(colnames(COUNTRY.ATI.shp) ==var.name)]]/dividor
+variable = COUNTRY.ATI.shp[[which(colnames(COUNTRY.ATI.shp) ==var.name)]] * var.scale.factor
 
 tot.count.cntry.map = map.ploter.log(fill.scale.title = fill.scale.title , main.title = main.title , sub.title = sub.title,
                                    background = countries, fillground = COUNTRY.ATI.shp , fillground2 = COUNTRY.ATI.shp,
@@ -717,9 +796,9 @@ sub.title = "By country"
 fill.scale.title = "Ancient tree records (thousands)"
 colour.limits = c(0.000001,ati.pretty.max)
 transformation = "log10"
-dividor = 1000
+var.scale.factor = 1000
 
-variable = COUNTRY.ATI.shp[[which(colnames(COUNTRY.ATI.shp) ==var.name)]]/dividor
+variable = COUNTRY.ATI.shp[[which(colnames(COUNTRY.ATI.shp) ==var.name)]] * var.scale.factor
 
 ancient.count.cntry.map =   map.ploter.log( fill.scale.title = fill.scale.title , main.title = main.title , sub.title = sub.title,
                                         background = countries, fillground = COUNTRY.ATI.shp , fillground2 = COUNTRY.ATI.shp,
@@ -735,9 +814,9 @@ sub.title = "By country"
 fill.scale.title = "Veteran tree records (thousands)"
 colour.limits = c(0,max(COUNTRY.ATI.shp[[which(colnames(COUNTRY.ATI.shp) ==var.name)]]))
 transformation = "log10"
-dividor = 1000
+var.scale.factor = 1000
 
-variable = COUNTRY.ATI.shp[[which(colnames(COUNTRY.ATI.shp) ==var.name)]]/dividor
+variable = COUNTRY.ATI.shp[[which(colnames(COUNTRY.ATI.shp) ==var.name)]] * var.scale.factor
 
 vet.count.cntry.map =   map.ploter.log( fill.scale.title = fill.scale.title , main.title = main.title , sub.title = sub.title,
                                             background = countries, fillground = COUNTRY.ATI.shp , fillground2 = COUNTRY.ATI.shp,
@@ -754,9 +833,9 @@ sub.title = "By country"
 fill.scale.title = expression(paste("ATI records per km"^"2",sep = ""))
 colour.limits = c(0,0.9)
 transformation = "identity"
-dividor = 1
+var.scale.factor = 1
 
-variable = COUNTRY.ATI.shp[[which(colnames(COUNTRY.ATI.shp) ==var.name)]]/dividor
+variable = COUNTRY.ATI.shp[[which(colnames(COUNTRY.ATI.shp) ==var.name)]] * var.scale.factor
 
 totdens.country.map = map.ploter.ident (
   fill.scale.title = fill.scale.title , main.title = main.title , sub.title = sub.title,
@@ -767,7 +846,7 @@ totdens.country.map = map.ploter.ident (
   clr.breaks = colour.brks(lims = colour.limits),
   clr.labels = colour.lable(x = variable ,
                             lims = colour.limits , 
-                            breaks = colour.brks(colour.limits ), dividor = dividor))
+                            breaks = colour.brks(colour.limits ), var.scale.factor = var.scale.factor))
 ggsave(plot = totdens.country.map , paste(scale.name, var.name, "map.pdf"))
 
 ### ANCEINT DENS COUNTRY MAPS ----
@@ -778,9 +857,9 @@ fill.scale.title = expression(paste("Ancient tree records per km"^"2",sep = ""))
 sub.title = "By country"
 colour.limits = c(0,0.9)
 transformation = "identity"
-dividor = 1
+var.scale.factor = 1
 
-variable = COUNTRY.ATI.shp[[which(colnames(COUNTRY.ATI.shp) ==var.name)]]/dividor
+variable = COUNTRY.ATI.shp[[which(colnames(COUNTRY.ATI.shp) ==var.name)]] * var.scale.factor
 
 ancient.dens.cntry.map = map.ploter.ident (
   fill.scale.title = fill.scale.title , main.title = main.title , sub.title = sub.title,
@@ -791,7 +870,7 @@ ancient.dens.cntry.map = map.ploter.ident (
   clr.breaks = colour.brks(lims = colour.limits),
   clr.labels = colour.lable(x = variable ,
                             lims = colour.limits , 
-                            breaks = colour.brks(colour.limits ), dividor = dividor))
+                            breaks = colour.brks(colour.limits ), var.scale.factor = var.scale.factor))
 ggsave(plot = ancient.dens.cntry.map , paste(scale.name, var.name, "map.pdf"))
 
 ### VET DENS COUNTRY MAPS ----
@@ -801,9 +880,9 @@ sub.title = "By country"
 fill.scale.title = expression(paste("Veteran tree records per km"^"2",sep = ""))
 colour.limits = c(0,0.1)
 transformation = "identity"
-dividor = 1
+var.scale.factor = 1
 
-variable = COUNTRY.ATI.shp[[which(colnames(COUNTRY.ATI.shp) ==var.name)]]/dividor
+variable = COUNTRY.ATI.shp[[which(colnames(COUNTRY.ATI.shp) ==var.name)]] * var.scale.factor
 
 vet.dens.cntry.map = map.ploter.ident (
   fill.scale.title = fill.scale.title , main.title = main.title , sub.title = sub.title,
@@ -814,6 +893,6 @@ vet.dens.cntry.map = map.ploter.ident (
   clr.breaks = colour.brks(lims = colour.limits),
   clr.labels = colour.lable(x = variable ,
                             lims = colour.limits , 
-                            breaks = colour.brks(colour.limits ), dividor = dividor))
+                            breaks = colour.brks(colour.limits ), var.scale.factor = var.scale.factor))
 ggsave(plot = vet.dens.cntry.map , paste(scale.name, var.name, "map.pdf"))
 
