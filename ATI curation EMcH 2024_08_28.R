@@ -278,5 +278,5 @@ ati[which(ati$CreatedDate > ati$VerifiedDate ),c("Id", "CreatedDate", "VerifiedD
 dim (ati[which(ati$CreatedDate > ati$VerifiedDate ),c("CreatedDate", "VerifiedDate", "SurveyDate")])
 dim (ati[which(ati$CreatedDate > ati$VerifiedDate ),c("CreatedDate", "VerifiedDate")])
 
-save(ati, file = paste0(gis.wd, "\\Data\\ATI\\ati", Sys.Date(),"curated_from",ati_filename, ".RData"))
+save(ati, ati_filename, file = paste0(gis.wd, "\\Data\\ATI\\ati", Sys.Date(),"curated_from",ati_filename, ".RData"))
 
