@@ -267,7 +267,12 @@ ati <- st_intersection( ati, bbox_uk_ireland) # keep only trees within UK and Ir
 # identify which GridReference are using irish grid ref system
 
 
-
+# overwrite lat long using the geometry
+x <- ati %>% st_transform(4326)%>% st_coordinates() %>% as.data.frame() %>%
+  setNames(c("Longitude", "Latitude"))
+ati$Longitude <- x$Longitude
+ati$Latitude <- x$Latitude
+rm(x)
 
 
 # some dates are missing which are recorded and verified by the same person, and there is a verification date. For these I have made the origianl date teh verified date
