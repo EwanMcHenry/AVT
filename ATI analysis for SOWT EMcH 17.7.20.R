@@ -260,7 +260,7 @@ hex.ATI.shp$`p.avt.lost`[hex.ATI.shp$`Ancient tree` + hex.ATI.shp$`Veteran tree`
 hex.ATI.shp$`p.all.lost`[hex.ATI.shp$`Ancient tree` + hex.ATI.shp$`Veteran tree` + hex.ATI.shp$`Notable tree` == 0] <- NA
 
   ## HEX MAP HEATMAPS ----
-scale.name = "Hex"
+constants$scale.name = "Hex"
 ### density HEX MAPS ----
 #### ATI records density HEXMAP ----
 
@@ -318,7 +318,7 @@ ggsave(plot = avt.hex.map , paste("analysis outputs//maps//", ati_filename, "- a
 
 #### Ancient records density HEXMAP ----
 
-avt.hex.map <- map.ploter(to.plot = hex.ATI.shp$dens.ancient,
+ancient.hex.map <- map.ploter(to.plot = hex.ATI.shp$dens.ancient,
                           fill.scale.title = expression(paste("Ancient tree records per km"^"2",sep = "")),
                           main.title = "Ancient tree record density" ,
                           sub.title = NULL,
@@ -340,7 +340,7 @@ avt.hex.map <- map.ploter(to.plot = hex.ATI.shp$dens.ancient,
                           just_pretty = T,
                           manual_breaks = c(0.1,1,10, 100)
 ) 
-ggsave(plot = avt.hex.map , paste("analysis outputs//maps//", ati_filename, "- avt.hex.map.pdf"), 
+ggsave(plot = ancient.hex.map , paste("analysis outputs//maps//", ati_filename, "- ancient.hex.map.pdf"), 
        height = constants$map.height, width = constants$map.width)
 
 # ##### alt ----
@@ -433,7 +433,7 @@ ggsave(plot = avt.hex.map , paste("analysis outputs//maps//", ati_filename, "- a
 #       label.position = "bottom"
 #     )
 #   )
-# ggsave(plot = sowt.plot ,paste(scale.name, var.name, "sowt.plot01","map.pdf"), height = 5, width = 5)
+# ggsave(plot = sowt.plot ,paste(constants$scale.name, var.name, "sowt.plot01","map.pdf"), height = 5, width = 5)
 
 
 
@@ -485,7 +485,7 @@ ggsave(plot = avt.hex.map , paste("analysis outputs//maps//", ati_filename, "- a
 #   west_hex_map$constituency_name[west_hex_map$constituency_name =="Newry & Armagh" ] = "Newry and Armagh"   
 #   
 #   westhex.ATI = merge(west_hex_map, MP.table , by.x = "constituency_name", by.y = "Constituency")
-#   scale.name = "MP"
+#   constants$scale.name = "MP"
 #   
 #     ### COUNT MAPS ----
 #       #### total ATI records ---- 
@@ -505,8 +505,8 @@ ggsave(plot = avt.hex.map , paste("analysis outputs//maps//", ati_filename, "- a
 #                     transformation = transformation, 
 #                     n.breaks = 6,
 #                     to.plot = variable)
-#     ggsave(plot = ati.mp.map ,paste(scale.name, var.name, "map.pdf"))
-#     ggsave(plot = ati.mp.map ,paste(scale.name, var.name, "map.svg"))
+#     ggsave(plot = ati.mp.map ,paste(constants$scale.name, var.name, "map.pdf"))
+#     ggsave(plot = ati.mp.map ,paste(constants$scale.name, var.name, "map.svg"))
 #     
 #         # hex map
 #     variable = westhex.ATI[[which(colnames(westhex.ATI) ==var.name)]] * var.scale.factor    
@@ -518,7 +518,7 @@ ggsave(plot = avt.hex.map , paste("analysis outputs//maps//", ati_filename, "- a
 #                     n.breaks = 6,
 #                     to.plot = variable)
 #     
-#     ggsave(plot = tot.mp.hexmap, paste(scale.name,var.name, "hexmap.pdf"))
+#     ggsave(plot = tot.mp.hexmap, paste(constants$scale.name,var.name, "hexmap.pdf"))
 #     
 #       #### Ancient Tree records ---- 
 #     var.name = "Ancient.count"
@@ -537,7 +537,7 @@ ggsave(plot = avt.hex.map , paste("analysis outputs//maps//", ati_filename, "- a
 #                                            transformation = transformation,
 #                                            n.breaks = 6,
 #                                            to.plot = variable)
-#         ggsave(plot = ancient.mp.map ,paste(scale.name, var.name, "map.pdf"))
+#         ggsave(plot = ancient.mp.map ,paste(constants$scale.name, var.name, "map.pdf"))
 #         
 #         # hex map
 #         variable = westhex.ATI[[which(colnames(westhex.ATI) ==var.name)]]    
@@ -549,7 +549,7 @@ ggsave(plot = avt.hex.map , paste("analysis outputs//maps//", ati_filename, "- a
 #                                          n.breaks = 6,
 #                                          to.plot = variable)
 #         
-#         ggsave(plot = ancient.mp.hexmap, paste(scale.name,var.name, "hexmap.pdf"))
+#         ggsave(plot = ancient.mp.hexmap, paste(constants$scale.name,var.name, "hexmap.pdf"))
 #         
 #       #### Veteran tree maps -----
 #     var.name = "Veteran.count"
@@ -568,7 +568,7 @@ ggsave(plot = avt.hex.map , paste("analysis outputs//maps//", ati_filename, "- a
 #                                        transformation = transformation,
 #                                        n.breaks = 6,
 #                                        to.plot = variable)
-#         ggsave(plot = vet.mp.map ,paste(scale.name, var.name, "map.pdf"))
+#         ggsave(plot = vet.mp.map ,paste(constants$scale.name, var.name, "map.pdf"))
 #         
 #         # hex map
 #         variable = westhex.ATI[[which(colnames(westhex.ATI) ==var.name)]]    
@@ -580,7 +580,7 @@ ggsave(plot = avt.hex.map , paste("analysis outputs//maps//", ati_filename, "- a
 #                                          n.breaks = 6,
 #                                          to.plot = variable)
 #         
-#         ggsave(plot = vet.mp.hexmap, paste(scale.name,var.name, "hexmap.pdf"))
+#         ggsave(plot = vet.mp.hexmap, paste(constants$scale.name,var.name, "hexmap.pdf"))
 #         
 #     ### DENSITY MAPS ----
 #       #### ATI records ----
@@ -604,7 +604,7 @@ ggsave(plot = avt.hex.map , paste("analysis outputs//maps//", ati_filename, "- a
 #           clr.labels = colour.lable(x = variable ,
 #                                     lims = colour.limits , 
 #                                     breaks = colour.brks(colour.limits ), var.scale.factor = var.scale.factor))
-#         ggsave(plot = totdens.mp.map , paste(scale.name, var.name, "map.pdf"))
+#         ggsave(plot = totdens.mp.map , paste(constants$scale.name, var.name, "map.pdf"))
 #         
 #         
 #         # hex map
@@ -620,7 +620,7 @@ ggsave(plot = avt.hex.map , paste("analysis outputs//maps//", ati_filename, "- a
 #           clr.labels = colour.lable(x = variable ,
 #                                     lims = colour.limits , 
 #                                     breaks = colour.brks(colour.limits ), var.scale.factor = var.scale.factor))
-#         ggsave(plot = totdens.mp.hexmap, paste(scale.name,var.name, "hexmap.pdf"))
+#         ggsave(plot = totdens.mp.hexmap, paste(constants$scale.name,var.name, "hexmap.pdf"))
 #         
 #         
 #       #### Ancient records ----
@@ -643,7 +643,7 @@ ggsave(plot = avt.hex.map , paste("analysis outputs//maps//", ati_filename, "- a
 #           clr.labels = colour.lable(x = variable ,
 #                                     lims = colour.limits , 
 #                                     breaks = colour.brks(colour.limits ), var.scale.factor = var.scale.factor))
-#         ggsave(plot = ancientdens.mp.map , paste(scale.name, var.name, "map.pdf"))
+#         ggsave(plot = ancientdens.mp.map , paste(constants$scale.name, var.name, "map.pdf"))
 #         
 #         # hex map
 #         variable = westhex.ATI[[which(colnames(westhex.ATI) ==var.name)]]    
@@ -658,7 +658,7 @@ ggsave(plot = avt.hex.map , paste("analysis outputs//maps//", ati_filename, "- a
 #           clr.labels = colour.lable(x = variable ,
 #                                     lims = colour.limits , 
 #                                     breaks = colour.brks(colour.limits ), var.scale.factor = var.scale.factor))
-#         ggsave(plot = ancientdens.mp.hexmap, paste(scale.name,var.name, "hexmap.pdf"))
+#         ggsave(plot = ancientdens.mp.hexmap, paste(constants$scale.name,var.name, "hexmap.pdf"))
 #         
 #       #### veteran records ----
 #     var.name = "veteran.density"
@@ -680,7 +680,7 @@ ggsave(plot = avt.hex.map , paste("analysis outputs//maps//", ati_filename, "- a
 #           clr.labels = colour.lable(x = variable ,
 #                                     lims = colour.limits , 
 #                                     breaks = colour.brks(colour.limits ), var.scale.factor = var.scale.factor))
-#         ggsave(plot = vetdens.mp.map , paste(scale.name, var.name, "map.pdf"))
+#         ggsave(plot = vetdens.mp.map , paste(constants$scale.name, var.name, "map.pdf"))
 #         
 #         # hex map
 #         variable = westhex.ATI[[which(colnames(westhex.ATI) ==var.name)]]    
@@ -695,7 +695,7 @@ ggsave(plot = avt.hex.map , paste("analysis outputs//maps//", ati_filename, "- a
 #           clr.labels = colour.lable(x = variable ,
 #                                     lims = colour.limits , 
 #                                     breaks = colour.brks(colour.limits ), var.scale.factor = var.scale.factor))
-#         ggsave(plot = vetdens.mp.hexmap, paste(scale.name,var.name, "hexmap.pdf"))
+#         ggsave(plot = vetdens.mp.hexmap, paste(constants$scale.name,var.name, "hexmap.pdf"))
 #         
 #         
 # 
