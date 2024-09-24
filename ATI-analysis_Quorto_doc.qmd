@@ -1,0 +1,590 @@
+---
+title: "Ancient Tree Inventory analysis"
+author: "Ewan McHenry & Ed Pyne"
+format:
+  html:
+    theme: cosmo
+    reference-location: margin
+    anchor-sections: true
+    embed-resources: FALSE
+knitr:
+  opts_chunk:
+    out.width: "100%"
+    fig.height: 8  # Set your desired height
+editor: visual
+date: today
+date-format: "D MMM, YYYY"
+
+prefer-html: true
+
+execute:
+  echo: false
+  warning: false
+---
+
+This is a living document. Please share any feedback and report bugs to ewanmchenry\@woodlandtrust.org.uk.
+
+```{r, eval = FALSE}
+source("ATI curation EMcH 2024_08_28.R") # script to curate exported dataset
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+
+# library ----
+library(sf) # for gis
+library("rnrfa") # to convert os gb grif ref
+library(rgdal) # to convert lat long to os gb
+
+library("rnaturalearth") # map of countries of the entire world
+library("rnaturalearthdata")
+library("rgeos")
+library(tidyverse)
+library(parlitools)
+library(extrafont)
+library(nngeo) # for st_nn()
+library(plgraphics) # for prettyscale()
+library(rmapshaper) # for ms_simplify()
+library(svglite)
+library(ggpubr) 
+library(viridis)
+library(U.utilities) # devtools::install_github("EwanMcHenry/U.utilities")
+library(units)
+library(leaflet)
+library(leaflet.extras)
+library(DT)
+library(glue)  # For string interpolation
+source("ati_table to dt.R")
+
+# load data ----
+# ati taken form cuation code, nnjoined with Awi and NFI in QGIS where that processing is quicker
+load(paste0(gis.wd, "\\Data\\ATI\\ati2024-09-20curated_fromATI - 2024_08_05.csv.RData"))
+countries0 = st_read("D:\\Users\\Ewan McHenry\\OneDrive - the Woodland Trust\\GIS\\Data\\administrative boundaries\\Countries\\5countries.v1.05.shp") %>% 
+  st_transform(27700) %>% 
+  st_buffer(0)
+
+
+# configure ----
+constants <- list(hexdist.h = 10000,
+                  hexdist.v = 10000,
+                  focal_countries = c("England", "Scotland", "Wales", "N.Ireland"),
+                  map.height = 5, 
+                  map.width = 5,
+                  scale.name = "Hex"
+
+)
+
+# curation ----
+#convert ati crs
+ati <- ati %>% st_transform(27700)
+
+# add countries area
+countries0$country.ha <-  st_area(countries0) %>% 
+  set_units(value = "ha") %>%
+  as.numeric()
+
+countries <- countries0 %>% 
+  rename(country = ctry17nm) %>%
+  filter(country %in% constants$focal_countries ) %>% 
+  mutate(country = factor(country, levels = sort(unique(country))))
+
+countries0 <- countries0 %>% 
+    rename(country = ctry17nm) %>%
+  st_simplify(dTolerance = 300) # for plots - dont need high res
+
+ati <- st_join(ati, countries)
+
+
+```
+
+## ATI interactive map
+
+```{r leftlet records}
+## leaflet records ----
+
+# Ensure the `ati_wgs` data is transformed to WGS84 (EPSG:4326)
+avt_wgs <- st_transform(ati[ati$VeteranStatusName %in% c("Veteran tree", "Ancient tree"),], 4326)
+avt_lost_wgs <- st_transform(ati[ati$VeteranStatusName %in% c("Lost Veteran tree", "Lost Ancient tree"),], 4326)
+
+# Define color palette based on VeteranStatusName
+cols4trees <- c("darkblue", "orange")
+colours_lost <- c("Lost Ancient tree" = cols4trees[1], "Lost Veteran tree" = cols4trees[2])  # Colors for Lost trees
+pal_lost <- colours_lost[as.character(avt_lost_wgs$VeteranStatusName)]
+colours_avt <- c("Ancient tree" = cols4trees[1], "Veteran tree" = cols4trees[2] )  # Colors for Lost trees
+
+pal_avt <- colorFactor(palette = colours_avt, domain = names(colours_avt))
+# Define custom "X" icons with dynamic colors for the Lost group
+lost_icons <- awesomeIcons(
+  icon = "times",  # 'times' is a FontAwesome "X"
+  iconColor = ~pal_lost(VeteranStatusName),  # Icon itself remains white
+  markerColor = ~pal_lost(VeteranStatusName),  # Marker background color
+  library = "fa"
+)
+
+
+# Create a leaflet map with filtering based on specific VeteranStatus types
+leaflet() %>%
+  addProviderTiles(providers$OpenStreetMap) %>%
+  
+  # Add custom icons for Veteran trees with dynamic color
+  addAwesomeMarkers(data = avt_wgs,
+                    ~st_coordinates(avt_wgs)[,1],
+                    ~st_coordinates(avt_wgs)[,2],
+                    icon = awesomeIcons(
+                      icon = 'leaf-outline',
+                      iconColor = 'black',
+                      library = 'ion',
+                      markerColor = as.character(colours_avt[as.character(avt_wgs$VeteranStatusName)])
+                    ),
+                    popup = ~paste("<strong>Status:</strong>", VeteranStatusName, "<br>",
+                                   "<strong>Species:</strong>", SpeciesName, "<br>",
+                                   "<strong>Form:</strong>", TreeFormName, "<br>",
+                                   "<strong>Standing:</strong>", StandingStatusName, "<br>",
+                                   "<strong>Date added:</strong>", VerifiedDate, "<br>"),
+                    group = "AVTs",
+                    clusterOptions = markerClusterOptions(disableClusteringAtZoom = 8)) %>%
+  
+  # Add custom "X" icons for Lost trees with dynamic color
+  addAwesomeMarkers(data = avt_lost_wgs,
+                    ~st_coordinates(avt_lost_wgs)[,1],
+                    ~st_coordinates(avt_lost_wgs)[,2],
+                    icon = awesomeIcons(
+                      icon = 'ios-close',
+                      iconColor = 'black',
+                      library = 'ion',
+                      markerColor = as.character(pal_lost)
+                    ),
+                    popup = ~paste("<strong>Status:</strong>", VeteranStatusName, "<br>",
+                                   "<strong>Species:</strong>", SpeciesName, "<br>",
+                                   "<strong>Form:</strong>", TreeFormName, "<br>",
+                                   "<strong>Standing:</strong>", StandingStatusName, "<br>",
+                                   "<strong>Date added:</strong>", VerifiedDate, "<br>"),
+                    group = "Lost",
+                    clusterOptions = markerClusterOptions(disableClusteringAtZoom = 8)) %>%
+  
+  # Add a legend for the Veteran trees
+  addLegend("bottomright",
+            colors = colours_avt,
+            labels = c("Ancient tree", "Veteran tree"),
+            title = NA,
+            opacity = 1) %>% 
+  
+  # Add layer controls to toggle specific VeteranStatus types
+  addLayersControl(
+    overlayGroups = c("AVTs", "Lost"),  # Allow toggling between groups
+    options = layersControlOptions(collapsed = FALSE)
+  ) %>%
+  hideGroup("Lost") %>%
+  
+  # Optional: Add search bar
+  addSearchOSM(options = searchOptions(
+    position = "topleft",
+    collapsed = T
+  ))
+
+rm(avt_wgs, avt_lost_wgs) 
+
+```
+
+## Intro
+
+[The Ancient Tree Inventory](https://ati.woodlandtrust.org.uk), held and managed by The Woodland Trust and made openly available, is a data set of records of Ancient, Veteran and other Notable Trees in the UK, collected by citizen scientist volunteers and validated by specially trained volunteers to increase reliability. As a continuously updated, opportunistically collected data set that consists of positive records only (no records of tree absences), interpretation comes with important caveats, perhaps most importantly that records are largely influenced by recorder effort and how this is unevenly spread geographically. Regardless, the ATI serves as a crucial resource for conservation efforts, helping to identify and protect these ecologically and culturally significant trees. By analyzing the ATI, we can gain insight into the distribution, density, and characteristics of these remarkable natural landmarks. This document explores various spatial and statistical analyses of ATI records.
+
+## Data collection
+
+## Data curation
+
+As a volunteer-collected data, ATI records are collected with variable quality and rigor, requiring careful curation. For this analysis, curation of the complete ATI, as exported on `r format(as.Date(gsub(".*_(\\d{4}_\\d{2}_\\d{2}).csv$", "\\1", gsub("ATI - ", "", ati_filename)), "%Y_%m_%d"), "%d/%m/%Y")`, was carried out, using [code that has been publicly](https://github.com/EwanMcHenry/AVT/blob/main/ATI%20curation%20EMcH%202024_08_28.R) [available](https://github.com/EwanMcHenry/AVT/blob/main/ATI%20curation%20EMcH%202024_08_28.R).
+
+The curation focuses on:
+
+-   Unifying the geographic coordinate reference system used to define the location of records
+
+-   Correcting typos in grid references, where obvious (e.g. where records appear to be in the wrong country, or at sea). This is typically supported by additional record information on location (e.g. town name).
+
+# Spatial patterns of AVT density
+
+```{r hexmap_curation}
+  ## curation - hex table - Ancient, vet and lost ----
+# hex grid
+hexing_area <- countries[countries$country %in% constants$focal_countries,] %>% 
+  st_union() %>% 
+  st_remove_holes() %>%  
+  st_simplify(dTolerance = 100, preserveTopology = T) %>% 
+  st_make_valid()
+
+hex.grid0 = st_make_grid(hexing_area,
+                         c(constants$hexdist.h, constants$hexdist.v), 
+                         what = "polygons", square = F)
+hex.grid0 <- st_sf(grid_id = 1:length(hex.grid0), geometry = hex.grid0) # add hex grid id
+
+hex.grid = hex.grid0 %>%
+  st_intersection(hexing_area) 
+# note hexes with same grid_id are the same multipolygon feature - possible bug/feature where bits of the same hex separated by water all share same attributes
+
+rm(hex.grid0, hexing_area)
+
+hex.grid$hex.ha <-  st_area(hex.grid) %>% 
+  set_units(value = "ha") %>%
+  as.numeric()
+
+tree_in_maphex <- st_join(ati, hex.grid) # join layers
+tree_in_maphex$grid_id <- factor(tree_in_maphex$grid_id, levels =  unique(tree_in_maphex$grid_id  )) # make factor so that consts with 0 still included
+# tables of N ATI vet types by hex 
+t_hex.VeteranStatus <-  addmargins(table(tree_in_maphex$grid_id, tree_in_maphex$VeteranStatusName), margin = 2)
+maphex.table <- as_tibble( cbind ( rownames(t_hex.VeteranStatus) , t_hex.VeteranStatus ))
+maphex.table[, colnames(maphex.table) %in% c(colnames(t_hex.VeteranStatus))] <- # those cols not... the id??
+  sapply(maphex.table[, colnames(maphex.table) %in% c(colnames(t_hex.VeteranStatus))], as.integer) # make sure theyre integers
+# name grid_id col in maphex.table
+colnames(maphex.table)[1] <- "grid_id"
+
+# add hex area from hex.grid, using grid_id
+maphex.table$hex.ha <- hex.grid$hex.ha[match(maphex.table$grid_id, hex.grid$grid_id)]
+
+# density of ATs per km sq
+maphex.table$dens.ancient = 100* maphex.table$`Ancient tree`/maphex.table$hex.ha
+maphex.table$dens.vet = 100* maphex.table$`Veteran tree`/maphex.table$hex.ha
+maphex.table$dens.notable = 100* maphex.table$`Notable tree`/maphex.table$hex.ha
+maphex.table$dens.avt = 100* (maphex.table$`Ancient tree` + maphex.table$`Veteran tree`)/maphex.table$hex.ha
+maphex.table$dens.all = 100* (maphex.table$`Ancient tree` + maphex.table$`Veteran tree` + maphex.table$`Notable tree`)/maphex.table$hex.ha
+
+# proportion lost 
+maphex.table$p.ancient.lost = maphex.table$`Lost Ancient tree`/ sum(maphex.table$`Ancient tree`, maphex.table$`Lost Ancient tree`) 
+maphex.table$p.vet.lost <- maphex.table$`Lost Veteran tree`/ sum(maphex.table$`Veteran tree`, maphex.table$`Lost Veteran tree`)
+maphex.table$p.notable.lost <- maphex.table$`Lost Notable tree`/sum(maphex.table$`Notable tree`, maphex.table$`Lost Notable tree`)
+maphex.table$p.avt.lost <- sum(maphex.table$`Lost Ancient tree`, maphex.table$`Lost Veteran tree`)/sum(maphex.table$`Ancient tree`, maphex.table$`Lost Ancient tree`, maphex.table$`Veteran tree`, maphex.table$`Lost Veteran tree`)
+maphex.table$p.all.lost <- sum(maphex.table$`Lost Ancient tree`, maphex.table$`Lost Veteran tree`, maphex.table$`Lost Notable tree`)/sum(maphex.table$`Ancient tree`, maphex.table$`Lost Ancient tree`, maphex.table$`Veteran tree`, maphex.table$`Lost Veteran tree`, maphex.table$`Notable tree`, maphex.table$`Lost Notable tree`)
+
+## merge hex grid with maphex.table
+hex.ATI.shp = merge(hex.grid,  maphex.table[ , -which(names(maphex.table) == "hex.ha")], by = "grid_id", by.y = "grid_id", all.x = TRUE)
+#replace new NAs from maphex.table with 0, except for the proportion lost columns
+hex.ATI.shp[is.na(hex.ATI.shp)] <- 0
+hex.ATI.shp$`p.ancient.lost`[hex.ATI.shp$`Ancient tree` == 0] <- NA
+hex.ATI.shp$`p.vet.lost`[hex.ATI.shp$`Veteran tree` == 0] <- NA
+hex.ATI.shp$`p.notable.lost`[hex.ATI.shp$`Notable tree` == 0] <- NA
+hex.ATI.shp$`p.avt.lost`[hex.ATI.shp$`Ancient tree` + hex.ATI.shp$`Veteran tree` == 0] <- NA
+hex.ATI.shp$`p.all.lost`[hex.ATI.shp$`Ancient tree` + hex.ATI.shp$`Veteran tree` + hex.ATI.shp$`Notable tree` == 0] <- NA
+
+```
+
+::: panel-tabset
+#### Ancient and Veteran Trees
+
+```{r}
+#### AVT records density HEXMAP ----
+
+avt.hex.map <- map.ploter(to.plot = hex.ATI.shp$dens.avt,
+                          fill.scale.title = expression(paste("AVT records per km"^"2",sep = "")),
+                          main.title = "Ancient & Veteran Tree Record Density" ,
+                          sub.title = NULL,
+                          fillground = hex.ATI.shp,
+                          background = countries0,
+                          pltly.text = NULL,
+                          transformation = "log10",
+                          col.limits = c(0.01, 120),
+                          use.viridis = TRUE,
+                          low.col = "white",
+                          high.col = "red",
+                          fill.line_size = 0.05,
+                          fill.line_colour = NA,
+                          background.fill = "grey90",
+                          background.size = 0.05,
+                          background.colour = "black",
+                          n.breaks = 5,
+                          round_to = 0.1,
+                          just_pretty = T,
+                          manual_breaks = c(0.1,1,10, 100)
+) 
+ggsave(plot = avt.hex.map , paste("analysis outputs//maps//", ati_filename, "- avt.hex.map.pdf"), 
+       height = constants$map.height, width = constants$map.width)
+avt.hex.map
+```
+
+#### Ancient Trees
+
+```{r}
+ancient.hex.map <- map.ploter(to.plot = hex.ATI.shp$dens.ancient,
+                          fill.scale.title = expression(paste("Ancient tree records per km"^"2",sep = "")),
+                          main.title = "Ancient tree record density" ,
+                          sub.title = NULL,
+                          fillground = hex.ATI.shp,
+                          background = countries0,
+                          pltly.text = NULL,
+                          transformation = "log10",
+                          col.limits = c(0.01, 120),
+                          use.viridis = TRUE,
+                          low.col = "white",
+                          high.col = "red",
+                          fill.line_size = 0.05,
+                          fill.line_colour = NA,
+                          background.fill = "grey90",
+                          background.size = 0.05,
+                          background.colour = "black",
+                          n.breaks = 5,
+                          round_to = 0.1,
+                          just_pretty = T,
+                          manual_breaks = c(0.1,1,10, 100)
+) 
+ggsave(plot = ancient.hex.map , paste("analysis outputs//maps//", ati_filename, "- ancient.hex.map.pdf"), 
+       height = constants$map.height, width = constants$map.width)
+ancient.hex.map
+```
+
+#### Ancient, Veteran Notable and Lost Trees
+
+```{r}
+#### ATI records density HEXMAP ----
+
+ati.hex.map <- map.ploter(to.plot = hex.ATI.shp$dens.all,
+           fill.scale.title = expression(paste("ATI records per km"^"2",sep = "")),
+           main.title = "Ancient, Veteran and Notable Tree Record Density" ,
+           sub.title = NULL,
+           fillground = hex.ATI.shp,
+           background = countries0,
+           pltly.text = NULL,
+           transformation = "log10",
+           col.limits = c(0.01, 120),
+           use.viridis = TRUE,
+           low.col = "white",
+           high.col = "red",
+           fill.line_size = 0.05,
+           fill.line_colour = NA,
+           background.fill = "grey90",
+           background.size = 0.05,
+           background.colour = "black",
+           n.breaks = 5,
+           round_to = 0.1,
+           just_pretty = T,
+           manual_breaks = c(0.1,1,10, 100)
+) 
+ggsave(plot = ati.hex.map , paste("analysis outputs//maps//", ati_filename, "- ati hexmap.pdf"), 
+       height = constants$map.height, width = constants$map.width)
+ati.hex.map
+```
+:::
+
+# Exploration of record data
+
+## Vetern status by country
+
+::: panel-tabset
+#### Number of records
+
+```{r}
+## Numbers of and proportions of records ----
+### t country - vet status----
+
+summary_table <- table(ati$VeteranStatusName, ati$country) %>%
+  addmargins(margin = c(1,2)) %>% 
+  as.data.frame.matrix()# %>%
+
+
+ati_table_to_dt(summary_table = summary_table, 
+            caption.text = htmltools::tags$caption(
+              style = 'caption-side: top; text-align: left;',
+              "Number of ATI records by country and type" ) )
+
+ 
+```
+
+#### Records per km\^2
+
+```{r}
+T_avt_dens <- table(ati$VeteranStatusName, ati$country) %>% 
+  addmargins(margin = c(1,2)) %>%
+  as.data.frame.matrix() %>%
+  as.matrix()
+
+T_avt_dens <- T_avt_dens %>% 
+  sweep(2, c(countries$country.ha, sum(countries$country.ha)), "/")*100
+
+T_avt_dens <- replace_rounded_zeros_with_string(T_avt_dens, 2)
+
+
+ati_table_to_dt(summary_table = T_avt_dens, 
+            caption.text = htmltools::tags$caption(
+              style = 'caption-side: top; text-align: left;',
+              "Vetern status: ATI record density per km", htmltools::tags$sup("2"), 
+              " by country and status" ))
+
+
+
+```
+
+#### Proportion of records
+
+```{r}
+T_prop_ati <- table(ati$VeteranStatusName, ati$country) %>% prop.table() %>% addmargins() %>% round(3) %>%
+  as.data.frame.matrix() %>%
+  as.matrix() 
+
+ati_table_to_dt(summary_table = T_prop_ati, 
+            caption.text = htmltools::tags$caption(
+              style = 'caption-side: top; text-align: left;',
+              "Vetern status: Proportion of ATI records by country and status"
+            ))
+
+
+```
+:::
+
+### 
+
+## Veteran status by species
+
+::: panel-tabset
+#### Number of records
+
+```{r}
+summary_table <- create_ordered_table(ati, "SpeciesName", "VeteranStatusName", type = "frequency", round_digits = 0) %>%
+  as.data.frame.matrix()# %>%
+
+ati_table_to_dt(summary_table = summary_table, 
+            caption.text = htmltools::tags$caption(
+              style = 'caption-side: top; text-align: left;',
+              "Veteran species: ATI records by vetern and species (N)" ) ,
+            col.summary = "All records",
+            row.summary = "All forms")
+
+```
+
+#### Proportion of records
+
+```{r}
+T_prop_ati <- create_ordered_table(ati, "SpeciesName", "VeteranStatusName", type = "proportion", round_digits = 5) %>% 
+  replace_rounded_zeros_with_string(3) %>%
+  as.data.frame.matrix() %>%
+  as.matrix() 
+
+ati_table_to_dt(summary_table = T_prop_ati, 
+            caption.text = htmltools::tags$caption(
+              style = 'caption-side: top; text-align: left;',
+              "Veteran species: ATI records by veteran status and species (proportion of all records)"
+            ), scroll_height = "400px",
+            col.summary = "All records",
+            row.summary = "All forms")
+
+```
+:::
+
+### 
+
+## Veteran by standing status
+
+::: panel-tabset
+#### Number of records
+
+```{r}
+
+
+summary_table <- create_ordered_table(ati, "StandingStatusName", "VeteranStatusName", type = "frequency", round_digits = 0) %>%
+  as.data.frame.matrix()# %>%
+
+ati_table_to_dt(summary_table = summary_table, 
+            caption.text = htmltools::tags$caption(
+              style = 'caption-side: top; text-align: left;',
+              "Veteran standing status: ATI records by vetern and standing status (N)" ),
+            col.summary = "All records",
+            row.summary = "All forms") 
+
+
+```
+
+#### Proportion of records
+
+```{r}
+T_prop_ati <- create_ordered_table(ati, "StandingStatusName", "VeteranStatusName", type = "proportion", round_digits = 5) %>% 
+  replace_rounded_zeros_with_string(3) %>%
+  as.data.frame.matrix() %>%
+  as.matrix() 
+
+ati_table_to_dt(summary_table = T_prop_ati, 
+            caption.text = htmltools::tags$caption(
+              style = 'caption-side: top; text-align: left;',
+              "Veteran standing status: ATI records by veteran and standing status (proportion of all records)"
+            ), scroll_height = "400px",
+            col.summary = "All records",
+            row.summary = "All forms")
+
+
+```
+:::
+
+### 
+
+## Tree form by country
+
+::: panel-tabset
+#### Number of records
+
+```{r}
+summary_table <- create_ordered_table(ati, "TreeFormName", "country", type = "frequency", round_digits = 0) %>%
+  as.data.frame.matrix()# %>%
+
+ati_table_to_dt(summary_table = summary_table, 
+            caption.text = htmltools::tags$caption(
+              style = 'caption-side: top; text-align: left;',
+              "Growth Form: Number of ATI records by country and form" ) )
+
+
+
+
+```
+
+#### Proportion of records
+
+```{r}
+T_prop_ati <- create_ordered_table(ati, "TreeFormName", "country", type = "proportion", round_digits = 5) %>% 
+  replace_rounded_zeros_with_string(3) %>%
+  as.data.frame.matrix() %>%
+  as.matrix() 
+
+ati_table_to_dt(summary_table = T_prop_ati, 
+            caption.text = htmltools::tags$caption(
+              style = 'caption-side: top; text-align: left;',
+              "Growth form: Proportion of ATI records by country and form"
+            ), scroll_height = "400px")
+
+
+```
+:::
+
+### Vetern status by form
+
+::: panel-tabset
+#### Number of records
+
+```{r}
+
+summary_table <- create_ordered_table(ati, "TreeFormName", "VeteranStatusName", type = "frequency", round_digits = 0) %>%
+  as.data.frame.matrix()# %>%
+
+ati_table_to_dt(summary_table = summary_table, 
+            caption.text = htmltools::tags$caption(
+              style = 'caption-side: top; text-align: left;',
+              "Veteran growth forms: ATI records by status and form (N)" ),
+            col.summary = "All records",
+            row.summary = "All forms"
+            )
+
+
+```
+
+#### Proportion of records
+
+```{r}
+T_prop_ati <- create_ordered_table(ati, "TreeFormName", "VeteranStatusName", type = "proportion", round_digits = 5) %>% 
+  replace_rounded_zeros_with_string(3) %>%
+  as.data.frame.matrix() %>%
+  as.matrix() 
+
+ati_table_to_dt(summary_table = T_prop_ati, 
+            caption.text = htmltools::tags$caption(
+              style = 'caption-side: top; text-align: left;',
+              "Veteran growth forms: ATI records by status and form (proportion of all records)"
+            ), scroll_height = "400px",
+            col.summary = "All records",
+            row.summary = "All forms")
+
+
+```
+:::
