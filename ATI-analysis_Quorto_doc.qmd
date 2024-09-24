@@ -6,7 +6,11 @@ format:
     theme: cosmo
     reference-location: margin
     anchor-sections: true
-    embed-resources: FALSE
+    embed-resources: TRUE
+    toc: true
+    code-fold: true
+
+
 knitr:
   opts_chunk:
     out.width: "100%"
